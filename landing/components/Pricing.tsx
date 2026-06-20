@@ -98,7 +98,7 @@ const PLANS = [
       { text: "Messages illimités (fair use 50M tokens)", ok: true },
       { text: "Tous les LLM (éco + avancés)", ok: true },
       { text: "Fichiers illimités", ok: true },
-      { text: "8 agents métier OHADA inclus", ok: true },
+      { text: "8 agents métier inclus", ok: true },
       { text: "10 sièges + tableau de bord admin", ok: true },
       { text: "API access + agents personnalisés", ok: true },
       { text: "Support prioritaire < 24h", ok: true },
@@ -465,8 +465,8 @@ export default function Pricing() {
           >
             Paiement accepté via{" "}
             <strong style={{ fontWeight: 500, color: "#0B1F3A" }}>Orange Money, Moov Money, Wave</strong>
-            {" "}et autres opérateurs locaux —{" "}
-            <strong style={{ fontWeight: 500, color: "#0B1F3A" }}>sans carte bancaire internationale</strong>.
+            {" "}et autres opérateurs CinetPay —{" "}
+            <strong style={{ fontWeight: 500, color: "#0B1F3A" }}>sans carte bancaire internationale requise</strong>.
           </p>
         </div>
       </div>

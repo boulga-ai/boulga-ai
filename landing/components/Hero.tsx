@@ -100,7 +100,7 @@ export default function Hero() {
             }}
             className="pulse-dot"
           />
-          Lancement en Afrique de l&apos;Ouest · Bêta en cours
+          Bêta en cours · Accès anticipé disponible
         </div>
 
         {/* Titre */}
@@ -116,8 +116,8 @@ export default function Hero() {
               letterSpacing: "-1px",
             }}
           >
-            Tous les grands LLM.{" "}
-            <span className="shimmer">Une seule interface.</span>
+            Claude, ChatGPT, Gemini, DeepSeek.{" "}
+            <span className="shimmer">Un seul abonnement.</span>
           </h1>
           <p
             className="fade-up fade-up-2"
@@ -130,9 +130,9 @@ export default function Hero() {
               fontWeight: 300,
             }}
           >
-            Gemini, Claude, ChatGPT et DeepSeek réunis en un seul endroit.
-            Payez en <strong style={{ fontWeight: 500, color: "#0B1F3A" }}>FCFA par mobile money</strong>,
-            sans carte internationale, sans barrière.
+            Les meilleures IA du monde réunies en une seule interface.
+            Accédez à toutes sans jongler entre plusieurs comptes et abonnements —
+            payez en <strong style={{ fontWeight: 500, color: "#0B1F3A" }}>CFA</strong>, simplement.
           </p>
         </div>
 
@@ -217,9 +217,9 @@ export default function Hero() {
         >
           {[
             { icon: <IconSparkles size={16} />, label: "4 LLM intégrés" },
-            { icon: <IconBrandMeta size={16} />, label: "Mobile money FCFA" },
+            { icon: <IconBrandMeta size={16} />, label: "Paiement en CFA" },
             { icon: <IconMessage size={16} />, label: "Interface en français" },
-            { icon: <IconBolt size={16} />, label: "Paiement sans carte internationale" },
+            { icon: <IconBolt size={16} />, label: "Sans carte internationale requise" },
           ].map((s) => (
             <div
               key={s.label}

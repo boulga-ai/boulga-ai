@@ -64,9 +64,9 @@ export default function Footer() {
                 fontWeight: 300,
               }}
             >
-              Tous les grands LLM en une seule interface.
-              Paiement mobile money en FCFA.
-              Pensé pour l&apos;Afrique de l&apos;Ouest.
+              Claude, ChatGPT, Gemini et DeepSeek
+              réunis en un seul abonnement.
+              Payez en CFA, simplement.
             </p>
           </div>
 
@@ -166,7 +166,7 @@ export default function Footer() {
               fontWeight: 300,
             }}
           >
-            © 2026 Boulga AI. Tous droits réservés. Fait avec soin en Afrique de l&apos;Ouest.
+            © 2026 Boulga AI. Tous droits réservés.
           </p>
 
           <div style={{ display: "flex", gap: 12 }}>

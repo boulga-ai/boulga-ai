@@ -38,8 +38,8 @@ const FEATURES = [
   },
   {
     icon: <IconLanguage size={22} />,
-    title: "Langues locales",
-    desc: "Interface en français. Réponses en Wolof, Dioula, Mooré ou Bambara si le LLM les supporte. La barrière linguistique n'est plus un obstacle.",
+    title: "Support multilingue",
+    desc: "Interface en français. Les LLM répondent dans la langue de votre choix : français, anglais, et de nombreuses autres langues selon le modèle.",
     badge: "Tous les plans",
     color: "#0B1F3A",
     bg: "#E8ECF2",
@@ -70,8 +70,8 @@ const FEATURES = [
   },
   {
     icon: <IconShieldCheck size={22} />,
-    title: "Paiement local sécurisé",
-    desc: "Orange Money, Moov Money, Wave — payez en FCFA sans carte internationale ni compte étranger. CinetPay assure la sécurité des transactions.",
+    title: "Paiement simplifié en CFA",
+    desc: "Orange Money, Moov Money, Wave — payez en CFA sans carte internationale ni compte étranger. Un abonnement, toutes les IA.",
     badge: "Exclusivité Boulga",
     color: "#F57C00",
     bg: "#FFF3E0",
@@ -111,9 +111,9 @@ export default function Features() {
               letterSpacing: "-0.5px",
             }}
           >
-            Pensé pour votre quotidien.
+            Des fonctionnalités qui font
             <br />
-            <span style={{ color: "#1565C0" }}>Taillé pour l&apos;Afrique.</span>
+            <span style={{ color: "#1565C0" }}>vraiment la différence.</span>
           </h2>
           <p
             style={{

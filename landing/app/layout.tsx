@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Boulga AI — Tous les grands LLM en une seule interface",
+  title: "Boulga AI — Claude, ChatGPT, Gemini & DeepSeek en un seul abonnement",
   description:
-    "Accédez à Gemini, Claude, ChatGPT et DeepSeek depuis une seule interface, en FCFA, avec mobile money. La plateforme IA pensée pour l'Afrique de l'Ouest.",
-  keywords: "intelligence artificielle, LLM, Gemini, Claude, ChatGPT, DeepSeek, Afrique, FCFA, mobile money, CinetPay",
+    "Claude, ChatGPT, Gemini et DeepSeek réunis en une seule interface. Un abonnement unique en CFA pour accéder aux meilleures IA du monde.",
+  keywords: "intelligence artificielle, LLM, Claude, ChatGPT, Gemini, DeepSeek, abonnement IA, CFA, mobile money",
   openGraph: {
     title: "Boulga AI",
-    description: "Tous les grands LLM en une seule interface. Paiement mobile money en FCFA.",
+    description: "Les meilleures IA en un seul abonnement. Claude, ChatGPT, Gemini, DeepSeek — payez en CFA.",
     type: "website",
   },
 };

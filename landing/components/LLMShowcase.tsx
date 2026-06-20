@@ -4,31 +4,14 @@ import { IconSparkles, IconCode, IconBrain, IconPencil, IconFileSearch } from "@
 
 const LLMS = [
   {
-    name: "Gemini 2.5",
-    provider: "Google",
-    color: "#1565C0",
-    bg: "linear-gradient(135deg, #EBF1FB 0%, #DDEEFF 100%)",
-    border: "#BBCFEF",
-    tag: "Actif au lancement",
-    tagColor: "#1565C0",
-    tagBg: "#EBF1FB",
-    models: ["Gemini Flash — Éco", "Gemini Pro — Avancé"],
-    strengths: [
-      { icon: <IconFileSearch size={14} />, text: "Fenêtre de contexte 1M tokens" },
-      { icon: <IconSparkles size={14} />, text: "Analyse de PDF & images" },
-      { icon: <IconBrain size={14} />, text: "Recherche et synthèse" },
-    ],
-    quote: "\"Idéal pour résumer de longs documents et la recherche d'informations.\"",
-  },
-  {
     name: "Claude Sonnet",
     provider: "Anthropic",
     color: "#0B1F3A",
     bg: "linear-gradient(135deg, #E8ECF2 0%, #DCE3EF 100%)",
     border: "#BEC8D8",
-    tag: "Bientôt disponible",
-    tagColor: "#94A3B8",
-    tagBg: "#F1F5F9",
+    tag: "Disponible",
+    tagColor: "#1565C0",
+    tagBg: "#EBF1FB",
     models: ["Claude Haiku — Éco", "Claude Sonnet — Avancé"],
     strengths: [
       { icon: <IconBrain size={14} />, text: "Raisonnement & analyse" },
@@ -43,9 +26,9 @@ const LLMS = [
     color: "#2E7D32",
     bg: "linear-gradient(135deg, #E8F5E9 0%, #D8EED9 100%)",
     border: "#A5D6A7",
-    tag: "Bientôt disponible",
-    tagColor: "#94A3B8",
-    tagBg: "#F1F5F9",
+    tag: "Disponible",
+    tagColor: "#1565C0",
+    tagBg: "#EBF1FB",
     models: ["GPT Instant — Éco", "GPT Pro — Avancé"],
     strengths: [
       { icon: <IconPencil size={14} />, text: "Créativité & rédaction" },
@@ -55,14 +38,31 @@ const LLMS = [
     quote: "\"Le meilleur pour la création de contenu créatif et le marketing.\"",
   },
   {
+    name: "Gemini 2.5",
+    provider: "Google",
+    color: "#1565C0",
+    bg: "linear-gradient(135deg, #EBF1FB 0%, #DDEEFF 100%)",
+    border: "#BBCFEF",
+    tag: "Disponible",
+    tagColor: "#1565C0",
+    tagBg: "#EBF1FB",
+    models: ["Gemini Flash — Éco", "Gemini Pro — Avancé"],
+    strengths: [
+      { icon: <IconFileSearch size={14} />, text: "Fenêtre de contexte 1M tokens" },
+      { icon: <IconSparkles size={14} />, text: "Analyse de PDF & images" },
+      { icon: <IconBrain size={14} />, text: "Recherche et synthèse" },
+    ],
+    quote: "\"Idéal pour résumer de longs documents et la recherche d'informations.\"",
+  },
+  {
     name: "DeepSeek V4",
     provider: "DeepSeek",
     color: "#6B3FA0",
     bg: "linear-gradient(135deg, #F0E8F8 0%, #E8DCF5 100%)",
     border: "#C5A8E2",
-    tag: "Bientôt disponible",
-    tagColor: "#94A3B8",
-    tagBg: "#F1F5F9",
+    tag: "Disponible",
+    tagColor: "#1565C0",
+    tagBg: "#EBF1FB",
     models: ["DeepSeek Flash — Éco", "DeepSeek Pro — Avancé"],
     strengths: [
       { icon: <IconCode size={14} />, text: "Code & développement" },
@@ -106,7 +106,7 @@ export default function LLMShowcase() {
           >
             Le meilleur de chaque LLM,
             <br />
-            au même endroit.
+            dans un seul abonnement.
           </h2>
           <p
             style={{
@@ -119,8 +119,8 @@ export default function LLMShowcase() {
               fontWeight: 300,
             }}
           >
-            Chaque IA a ses forces. Boulga vous donne accès à toutes.
-            Choisissez ou laissez le routage automatique décider.
+            Chaque IA a ses forces. Avec Boulga, vous y accédez toutes
+            sans multiplier les comptes ni les abonnements.
           </p>
         </div>
 

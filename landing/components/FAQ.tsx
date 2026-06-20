@@ -6,7 +6,7 @@ import { IconChevronDown } from "@tabler/icons-react";
 const FAQS = [
   {
     q: "Qu'est-ce que Boulga AI ?",
-    a: "Boulga (« puits » en mooré) est une plateforme qui regroupe les grands modèles d'IA — Gemini, Claude, ChatGPT, DeepSeek — dans une seule interface. Vous payez en FCFA par mobile money, sans avoir besoin d'une carte bancaire internationale.",
+    a: "Boulga (« puits » en mooré) est une plateforme qui regroupe les meilleurs modèles d'IA — Claude, ChatGPT, Gemini, DeepSeek — dans une seule interface. Un abonnement unique, payable en CFA, pour accéder à toutes ces IA sans jongler entre plusieurs comptes.",
   },
   {
     q: "Pourquoi payer Boulga si je peux accéder aux LLM directement ?",
@@ -14,7 +14,7 @@ const FAQS = [
   },
   {
     q: "Quels moyens de paiement sont acceptés ?",
-    a: "Orange Money, Moov Money, Wave, et tous les opérateurs supportés par CinetPay dans la zone FCFA. Un mode de paiement international par Stripe sera également disponible pour les utilisateurs hors Afrique de l'Ouest.",
+    a: "Orange Money, Moov Money, Wave, et tous les opérateurs supportés par CinetPay. Un mode de paiement international par Stripe est également disponible pour ceux qui préfèrent payer par carte.",
   },
   {
     q: "Quel LLM est disponible au lancement ?",
@@ -30,7 +30,7 @@ const FAQS = [
   },
   {
     q: "Les agents métier du plan Océan, c'est quoi exactement ?",
-    a: "Ce sont des assistants IA pré-configurés pour les réalités des entreprises d'Afrique de l'Ouest : Agent Comptable OHADA, Agent Facturation (devis et factures en FCFA), Agent RH, Agent Service Client, Agent Juridique, Agent Marketing, Agent Reporting et Agent Traducteur (Wolof, Dioula, Mooré).",
+    a: "Ce sont des assistants IA pré-configurés prêts à l'emploi : Agent Service Client, Agent Comptable, Agent Facturation, Agent RH, Agent Juridique, Agent Marketing, Agent Reporting et Agent Traducteur. Inclus dans le plan Océan, avec la possibilité de créer vos propres agents personnalisés.",
   },
   {
     q: "Mes données sont-elles confidentielles ?",
