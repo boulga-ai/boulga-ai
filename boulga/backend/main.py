@@ -1,3 +1,11 @@
+import logging
+import litellm
+
+# Silencer le bruit de logging LiteLLM
+litellm.suppress_debug_info = True
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+logging.getLogger("litellm").setLevel(logging.WARNING)
+
 from fastapi import FastAPI
 from app.config import settings
 from app.core.cors import setup_cors
