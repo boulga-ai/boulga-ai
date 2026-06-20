@@ -368,6 +368,8 @@ class ChatService:
         accumulated_code: list[str] = []
         gemini_binary_files: list[dict] = []
         claude_tool_calls: list[dict] = []
+        # Quand enable_code_exec est actif, masquer les blocs de code Python (UX propre)
+        _code_block_depth = 0
         try:
             async for event in llm_manager.stream_chat(
                 provider=provider,
@@ -379,11 +381,23 @@ class ChatService:
             ):
                 if event["type"] == "text":
                     full_response += event["text"]
-                    yield {"type": "chunk", "text": event["text"]}
+                    if enable_code_exec:
+                        # Compter les ``` pour savoir si on est dans un bloc de code
+                        chunk = event["text"]
+                        for line in chunk.splitlines(keepends=True):
+                            stripped = line.strip()
+                            if stripped.startswith("```"):
+                                if _code_block_depth == 0:
+                                    _code_block_depth = 1  # entrée dans le bloc
+                                else:
+                                    _code_block_depth = 0  # sortie du bloc
+                            elif _code_block_depth == 0:
+                                yield {"type": "chunk", "text": line}
+                    else:
+                        yield {"type": "chunk", "text": event["text"]}
                 elif event["type"] == "code":
                     accumulated_code.append(event["code"])
-                    # Émettre le bloc de code pour affichage côté client
-                    yield {"type": "chunk", "text": f"\n```python\n{event['code']}\n```\n"}
+                    # Code natif Gemini/Claude : ne pas afficher le code technique
                 elif event["type"] == "code_result":
                     if event.get("output"):
                         yield {"type": "chunk", "text": f"\n*Résultat :* {event['output']}\n"}
