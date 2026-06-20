@@ -339,14 +339,21 @@ class LLMManager:
         self._check_provider_model(provider, model_id)
 
         if enable_code_execution and provider == "gemini":
-            async for event in self._stream_gemini_code_exec(
-                model_id=model_id,
-                messages=messages,
-                system_prompt=system_prompt,
-                files=files,
-            ):
-                yield event
-            return
+            try:
+                events = []
+                async for event in self._stream_gemini_code_exec(
+                    model_id=model_id,
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    files=files,
+                ):
+                    events.append(event)
+                for event in events:
+                    yield event
+                return
+            except Exception:
+                # SDK natif indisponible (clé API) → chemin LiteLLM
+                pass
 
         if enable_code_execution and provider == "claude":
             async for event in self._stream_claude_create_file(

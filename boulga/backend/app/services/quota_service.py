@@ -146,6 +146,7 @@ class QuotaService:
             quota = self._quota_repo.create({
                 "user_id":         user_id,
                 "period_start":    period_start,
+                "period_end":      _period_end(tier),
                 "messages_limit":  limits["messages"],
                 "messages_used":   0,
                 "files_generated": 0,

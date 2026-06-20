@@ -1,10 +1,13 @@
-"""image_service.py — Génération d'images via OpenRouter.
+"""image_service.py — Génération d'images via OpenRouter (chat completions).
 
-Routing par provider :
-  gemini   → google/gemini-2.5-flash   (génération image native Imagen 3)
-  chatgpt  → openai/gpt-image-1        (successeur DALL-E 3, juin 2026)
-  claude   → openai/gpt-image-1        (Claude ne génère pas d'images)
-  deepseek → openai/gpt-image-1        (DeepSeek ne génère pas d'images)
+Les modèles image d'OpenRouter retournent les images dans message.images[0].image_url.url
+sous forme de data URI (data:image/png;base64,...).
+
+Routing :
+  gemini   → google/gemini-2.5-flash-image  (Nano Banana)
+  chatgpt  → openai/gpt-5-image-mini
+  claude   → google/gemini-2.5-flash-image  (Claude ne génère pas d'images)
+  deepseek → google/gemini-2.5-flash-image  (DeepSeek ne génère pas d'images)
 
 L'image générée est stockée dans le bucket Supabase "generated-files".
 """
@@ -23,19 +26,18 @@ from app.services.file_service import FileService
 
 logger = logging.getLogger(__name__)
 
-# ── Mapping provider → modèle image ──────────────────────────────────────────
+# ── Mapping provider → modèle image OpenRouter ───────────────────────────────
 
 _IMAGE_MODELS: dict[str, str] = {
-    "gemini":   "google/gemini-2.5-flash",
-    "chatgpt":  "openai/gpt-image-1",
-    "claude":   "openai/gpt-image-1",
-    "deepseek": "openai/gpt-image-1",
+    "gemini":   "google/gemini-2.5-flash-image",
+    "chatgpt":  "openai/gpt-5-image-mini",
+    "claude":   "google/gemini-2.5-flash-image",   # fallback
+    "deepseek": "google/gemini-2.5-flash-image",   # fallback
 }
 
-# Providers qui ne font pas de génération d'images nativement
 _FALLBACK_PROVIDERS = {"claude", "deepseek"}
 
-_OPENROUTER_IMAGE_URL = "https://openrouter.ai/api/v1/images/generations"
+_OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # ── Service ───────────────────────────────────────────────────────────────────
 
@@ -61,23 +63,21 @@ async def generate_image(
         "filename": str,
         "mime_type": "image/png",
         "size_bytes": int,
-        "used_fallback": bool, # True si provider ne supporte pas la génération
+        "used_fallback": bool,
       }
     """
-    model = _IMAGE_MODELS.get(provider, "openai/gpt-image-1")
+    model = _IMAGE_MODELS.get(provider, "google/gemini-2.5-flash-image")
     used_fallback = provider in _FALLBACK_PROVIDERS
 
     if not settings.OPENROUTER_API_KEY:
         raise ImageGenerationError("OPENROUTER_API_KEY non configurée")
 
-    # ── Appel OpenRouter ──────────────────────────────────────────────────
+    # ── Appel OpenRouter chat completions ─────────────────────────────────────
     payload = {
         "model": model,
-        "prompt": prompt,
-        "n": 1,
-        "size": "1024x1024",
-        "quality": "high",
-        "response_format": "b64_json",
+        "messages": [
+            {"role": "user", "content": prompt},
+        ],
     }
 
     headers = {
@@ -90,7 +90,7 @@ async def generate_image(
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
-                _OPENROUTER_IMAGE_URL,
+                _OPENROUTER_CHAT_URL,
                 json=payload,
                 headers=headers,
             )
@@ -102,10 +102,37 @@ async def generate_image(
     except Exception as exc:
         raise ImageGenerationError(f"Erreur réseau génération image: {exc}") from exc
 
-    # ── Décoder l'image ───────────────────────────────────────────────────
+    # ── Extraire l'image depuis message.images ─────────────────────────────
     try:
-        b64 = data["data"][0]["b64_json"]
-        image_bytes = base64.b64decode(b64)
+        message = data["choices"][0]["message"]
+        images = message.get("images") or []
+        if not images:
+            # Fallback : vérifier si content contient une data URI
+            content = message.get("content") or ""
+            if "data:image" in content:
+                # Extraire la data URI du texte
+                import re
+                match = re.search(r"data:image/[^;]+;base64,([A-Za-z0-9+/=]+)", content)
+                if match:
+                    image_bytes = base64.b64decode(match.group(1))
+                else:
+                    raise ImageGenerationError("Aucune image dans la réponse OpenRouter")
+            else:
+                raise ImageGenerationError(f"Aucune image dans la réponse OpenRouter. Contenu: {str(message)[:200]}")
+        else:
+            img_url = images[0]["image_url"]["url"]
+            # Le format est "data:image/png;base64,<base64data>"
+            if img_url.startswith("data:"):
+                header, b64 = img_url.split(",", 1)
+                image_bytes = base64.b64decode(b64)
+            else:
+                # URL externe → télécharger
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    dl = await client.get(img_url)
+                    dl.raise_for_status()
+                    image_bytes = dl.content
+    except ImageGenerationError:
+        raise
     except (KeyError, IndexError, Exception) as exc:
         raise ImageGenerationError(f"Réponse image inattendue: {exc}") from exc
 
@@ -125,10 +152,10 @@ async def generate_image(
     )
 
     return {
-        "file_id":      record["id"],
-        "url":          f"/api/files/{record['id']}/download",
-        "filename":     filename,
-        "mime_type":    "image/png",
-        "size_bytes":   len(image_bytes),
+        "file_id":       record["id"],
+        "url":           f"/api/files/{record['id']}/download",
+        "filename":      filename,
+        "mime_type":     "image/png",
+        "size_bytes":    len(image_bytes),
         "used_fallback": used_fallback,
     }
