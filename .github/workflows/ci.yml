@@ -1,0 +1,115 @@
+name: CI — Boulga
+
+on:
+  push:
+    branches: ["main", "develop"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  # ── Backend ───────────────────────────────────────────────────────────────────
+  backend:
+    name: Backend (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: boulga/backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx ruff
+
+      - name: Lint (ruff)
+        run: ruff check . --select=E,F,W --ignore=E501
+        continue-on-error: true  # Lint ne bloque pas en phase de dev
+
+      - name: Run tests
+        env:
+          SUPABASE_URL: https://test.supabase.co
+          SUPABASE_KEY: test-anon-key
+          JWT_SECRET: test-jwt-secret-for-ci-only
+          JWT_REFRESH_SECRET: test-refresh-secret-ci
+          REDIS_URL: redis://localhost:6379
+          RESEND_API_KEY: re_test
+          CINETPAY_API_KEY: test-cinetpay
+          CINETPAY_SITE_ID: "12345678"
+          CINETPAY_SECRET: test-secret
+          WHATSAPP_TOKEN: test-wa-token
+          WHATSAPP_PHONE_ID: "123456789012345"
+          WHATSAPP_VERIFY_TOKEN: test-verify-token
+          META_APP_SECRET: test-meta-secret
+          CRON_SECRET: test-cron
+          APP_ENV: test
+        run: pytest tests/ -v --tb=short
+
+  # ── Frontend ──────────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend (Next.js)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: boulga/frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: boulga/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (ESLint)
+        run: npm run lint
+        continue-on-error: true  # Lint ne bloque pas en phase de dev
+
+      - name: Type check
+        run: npx tsc --noEmit
+        continue-on-error: true
+
+      - name: Run tests
+        run: npm test -- --run
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000
+
+  # ── Build check ───────────────────────────────────────────────────────────────
+  build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    needs: [frontend]
+    if: github.ref == 'refs/heads/main'
+    defaults:
+      run:
+        working-directory: boulga/frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: boulga/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://placeholder.railway.app

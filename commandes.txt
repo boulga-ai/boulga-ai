@@ -1,0 +1,56 @@
+=== BACKEND ===
+
+# 1. Aller dans le dossier backend
+cd /workspaces/boulga-ai/boulga/backend
+
+# 2. Créer le venv (une seule fois)
+python3 -m venv .venv
+
+# 3. Activer le venv
+source .venv/bin/activate
+
+# 4. Installer les dépendances (une seule fois ou après modif requirements.txt)
+pip install -r requirements.txt
+
+# 5. Lancer le backend
+
+
+
+=== FRONTEND ===
+
+# 1. Aller dans le dossier frontend
+cd /workspaces/boulga-ai/boulga/frontend
+
+# 2. Installer les dépendances (une seule fois ou après modif package.json)
+npm install
+
+# 3. Lancer le frontend
+npm run dev
+
+
+=== RELANCER RAPIDEMENT (venv déjà créé) ===
+
+# Backend
+cd /workspaces/boulga-ai/boulga/backend && source .venv/bin/activate && uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# Frontend (autre terminal)
+cd /workspaces/boulga-ai/boulga/frontend && npm run dev
+
+
+=== SQL SUPABASE (à exécuter dans l'éditeur SQL de Supabase) ===
+
+-- Colonnes manquantes sur la table files
+ALTER TABLE files
+  ADD COLUMN IF NOT EXISTS source VARCHAR(20) NOT NULL DEFAULT 'upload',
+  ADD COLUMN IF NOT EXISTS conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS message_id UUID REFERENCES messages(id) ON DELETE SET NULL;
+
+-- Colonnes manquantes sur la table usage_quotas
+ALTER TABLE usage_quotas
+  ADD COLUMN IF NOT EXISTS messages_limit INT NOT NULL DEFAULT 10,
+  ADD COLUMN IF NOT EXISTS files_limit INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS tokens_limit BIGINT NOT NULL DEFAULT 0;
+
+-- Bucket Storage à créer manuellement dans Supabase > Storage
+-- Nom du bucket : generated
+-- Accès : privé (public = false)
