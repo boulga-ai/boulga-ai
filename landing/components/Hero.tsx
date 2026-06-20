@@ -37,13 +37,13 @@ export default function Hero() {
 
   return (
     <section
+      className="section-sm"
       style={{
         minHeight: "100vh",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        padding: "96px 24px 64px",
         position: "relative",
         overflow: "hidden",
         background: "linear-gradient(180deg, #FFFFFF 0%, #F5F7FA 100%)",
@@ -153,7 +153,7 @@ export default function Hero() {
               </p>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} style={{ display: "flex", gap: 8 }}>
+            <form onSubmit={handleSubmit} className="hero-form">
               <input
                 type="email"
                 value={email}
@@ -206,15 +206,7 @@ export default function Hero() {
         </div>
 
         {/* Stats */}
-        <div
-          className="fade-up fade-up-4"
-          style={{
-            display: "flex",
-            gap: 40,
-            flexWrap: "wrap",
-            justifyContent: "center",
-          }}
-        >
+        <div className="fade-up fade-up-4 hero-stats">
           {[
             { icon: <IconSparkles size={16} />, label: "4 LLM intégrés" },
             { icon: <IconBrandMeta size={16} />, label: "Paiement en CFA" },

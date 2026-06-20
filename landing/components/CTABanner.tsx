@@ -15,8 +15,8 @@ export default function CTABanner() {
 
   return (
     <section
+      className="section"
       style={{
-        padding: "96px 24px",
         background: "linear-gradient(135deg, #0B1F3A 0%, #1565C0 100%)",
         position: "relative",
         overflow: "hidden",
@@ -111,12 +111,8 @@ export default function CTABanner() {
         ) : (
           <form
             onSubmit={handleSubmit}
-            style={{
-              display: "flex",
-              gap: 8,
-              maxWidth: 440,
-              margin: "0 auto",
-            }}
+            className="hero-form"
+            style={{ maxWidth: 440, margin: "0 auto" }}
           >
             <input
               type="email"

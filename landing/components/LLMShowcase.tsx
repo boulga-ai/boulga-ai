@@ -76,12 +76,10 @@ const LLMS = [
 export default function LLMShowcase() {
   return (
     <section
-      style={{
-        padding: "96px 24px",
-        background: "linear-gradient(180deg, #F5F7FA 0%, #EEF2F7 100%)",
-      }}
+      className="section"
+      style={{ background: "linear-gradient(180deg, #F5F7FA 0%, #EEF2F7 100%)" }}
     >
-      <div style={{ maxWidth: 1140, margin: "0 auto" }}>
+      <div className="container">
         <div style={{ textAlign: "center", marginBottom: 64 }}>
           <span
             style={{
@@ -124,13 +122,7 @@ export default function LLMShowcase() {
           </p>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-            gap: 20,
-          }}
-        >
+        <div className="llm-grid">
           {LLMS.map((llm) => (
             <div
               key={llm.name}

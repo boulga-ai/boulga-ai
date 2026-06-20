@@ -66,3 +66,140 @@ h1, h2, h3, .serif {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* ── Responsive utilities ───────────────────────────────────────── */
+
+.section {
+  padding: 96px 24px;
+}
+
+.section-sm {
+  padding: 96px 24px 64px;
+}
+
+.container {
+  max-width: 1140px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.llm-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+.hero-form {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  max-width: 480px;
+}
+
+.hero-stats {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.footer-top {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 32px;
+}
+
+.footer-links {
+  display: flex;
+  gap: 48px;
+  flex-wrap: wrap;
+}
+
+/* ── Mobile (< 640px) ─────────────────────────────────────────── */
+@media (max-width: 639px) {
+  .section, .section-sm {
+    padding: 64px 16px;
+  }
+
+  .pricing-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .llm-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .features-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-form {
+    flex-direction: column;
+    max-width: 100%;
+  }
+
+  .hero-form input {
+    width: 100%;
+  }
+
+  .hero-form button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .hero-stats {
+    gap: 16px;
+  }
+
+  .footer-top {
+    flex-direction: column;
+  }
+
+  .footer-links {
+    gap: 32px;
+  }
+
+  .float {
+    animation: none;
+  }
+}
+
+/* ── Tablette (640px – 1023px) ───────────────────────────────── */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .section, .section-sm {
+    padding: 72px 24px;
+  }
+
+  .pricing-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .llm-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .features-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ── Desktop (1024px+) ───────────────────────────────────────── */
+@media (min-width: 1024px) and (max-width: 1199px) {
+  .pricing-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

@@ -82,12 +82,10 @@ export default function Features() {
   return (
     <section
       id="features"
-      style={{
-        padding: "96px 24px",
-        backgroundColor: "#fff",
-      }}
+      className="section"
+      style={{ backgroundColor: "#fff" }}
     >
-      <div style={{ maxWidth: 1140, margin: "0 auto" }}>
+      <div className="container">
         {/* Titre section */}
         <div style={{ textAlign: "center", marginBottom: 64 }}>
           <span
@@ -131,13 +129,7 @@ export default function Features() {
         </div>
 
         {/* Grille */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: 20,
-          }}
-        >
+        <div className="features-grid">
           {FEATURES.map((f) => (
             <div
               key={f.title}

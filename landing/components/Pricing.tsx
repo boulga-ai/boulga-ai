@@ -117,12 +117,10 @@ export default function Pricing() {
   return (
     <section
       id="pricing"
-      style={{
-        padding: "96px 24px",
-        backgroundColor: "#fff",
-      }}
+      className="section"
+      style={{ backgroundColor: "#fff" }}
     >
-      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", width: "100%", padding: "0 0" }}>
         {/* Titre */}
         <div style={{ textAlign: "center", marginBottom: 48 }}>
           <span
@@ -219,14 +217,7 @@ export default function Pricing() {
         </div>
 
         {/* Grille */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-            gap: 16,
-            alignItems: "start",
-          }}
-        >
+        <div className="pricing-grid">
           {PLANS.map((plan) => {
             const price = annual ? plan.price_year : plan.price_month;
             const perMonth = annual && plan.price_year > 0

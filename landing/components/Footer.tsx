@@ -21,14 +21,7 @@ export default function Footer() {
         }}
       >
         {/* Top */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: 32,
-          }}
-        >
+        <div className="footer-top">
           {/* Marque */}
           <div style={{ maxWidth: 280 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
@@ -71,7 +64,7 @@ export default function Footer() {
           </div>
 
           {/* Liens */}
-          <div style={{ display: "flex", gap: 48, flexWrap: "wrap" }}>
+          <div className="footer-links">
             <div>
               <p
                 style={{

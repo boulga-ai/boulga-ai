@@ -52,10 +52,8 @@ export default function FAQ() {
   return (
     <section
       id="faq"
-      style={{
-        padding: "96px 24px",
-        background: "linear-gradient(180deg, #F5F7FA 0%, #fff 100%)",
-      }}
+      className="section"
+      style={{ background: "linear-gradient(180deg, #F5F7FA 0%, #fff 100%)" }}
     >
       <div style={{ maxWidth: 760, margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: 56 }}>
