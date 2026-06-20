@@ -10,9 +10,9 @@ import {
 } from "@tabler/icons-react";
 
 const PROVIDERS = [
-  { name: "Gemini", color: "#1565C0", bg: "#EBF1FB", active: true },
-  { name: "Claude", color: "#0B1F3A", bg: "#E8ECF2", active: false },
+  { name: "Claude", color: "#0B1F3A", bg: "#E8ECF2", active: true },
   { name: "ChatGPT", color: "#2E7D32", bg: "#E8F5E9", active: false },
+  { name: "Gemini", color: "#1565C0", bg: "#EBF1FB", active: false },
   { name: "DeepSeek", color: "#6B3FA0", bg: "#F0E8F8", active: false },
 ];
 
