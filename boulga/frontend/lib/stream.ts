@@ -24,7 +24,7 @@ export interface StreamHandlers {
   onRouting?: (info: RoutingInfo) => void;
   onChunk: (text: string) => void;
   onTitle: (title: string) => void;
-  onFileReady: (url: string, name: string, format: string, size: number) => void;
+  onFileReady: (url: string, name: string, format: string, size: number, isImage: boolean) => void;
   onDone: (messageId: string) => void;
   onError: (message: string) => void;
 }
@@ -135,6 +135,7 @@ export function streamChat(
                 event.filename as string,
                 event.mime_type as string,
                 event.size_bytes as number,
+                Boolean(event.is_image),
               );
               break;
             case "done":

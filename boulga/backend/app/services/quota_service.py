@@ -29,11 +29,11 @@ logger = logging.getLogger(__name__)
 # ── Limites par tier ──────────────────────────────────────────────────────────
 
 TIER_LIMITS: dict[str, dict] = {
-    "free":   {"messages": 10,          "files": 0,       "tokens": 0,          "period": "daily"},
-    "goutte": {"messages": 600,         "files": 3,       "tokens": 0,          "period": "monthly"},
-    "source": {"messages": 800,         "files": 20,      "tokens": 0,          "period": "monthly"},
-    "fleuve": {"messages": 2_000,       "files": 50,      "tokens": 0,          "period": "monthly"},
-    "ocean":  {"messages": 999_999_999, "files": 999_999, "tokens": 50_000_000, "period": "monthly"},
+    "free":   {"messages": 10,          "files": 0,       "tokens": 0,          "images_daily": 1,   "images_monthly": 0,          "period": "daily"},
+    "goutte": {"messages": 600,         "files": 3,       "tokens": 0,          "images_daily": 0,   "images_monthly": 10,         "period": "monthly"},
+    "source": {"messages": 800,         "files": 20,      "tokens": 0,          "images_daily": 0,   "images_monthly": 50,         "period": "monthly"},
+    "fleuve": {"messages": 2_000,       "files": 50,      "tokens": 0,          "images_daily": 0,   "images_monthly": 150,        "period": "monthly"},
+    "ocean":  {"messages": 999_999_999, "files": 999_999, "tokens": 50_000_000, "images_daily": 0,   "images_monthly": 999_999,    "period": "monthly"},
 }
 
 OCEAN_TOKEN_CAP = 50_000_000
@@ -132,6 +132,9 @@ class QuotaService:
 
     def _mk_fil(self, uid: str, period: str) -> str:
         return f"boulga:q:fil:{uid}:{period}"
+
+    def _mk_img(self, uid: str, period: str) -> str:
+        return f"boulga:q:img:{uid}:{period}"
 
     # ── Postgres helpers ──────────────────────────────────────────────
 
@@ -250,3 +253,44 @@ class QuotaService:
             return True
         remaining = await self.get_remaining(user_id)
         return remaining["files_remaining"] > 0
+
+    async def consume_image(self, user_id: str) -> None:
+        """Consomme 1 crédit image + 5 messages équivalents."""
+        tier   = self._get_tier(user_id)
+        period = _period_key(tier)
+        ttl    = self._redis_ttl(tier)
+
+        await self._rincr(self._mk_img(user_id, period), ttl)
+        # Une image = 5 messages équivalents sur le quota messages
+        await self._rincr(self._mk_msg(user_id, period), ttl, 5)
+
+        try:
+            quota = self._get_or_create_quota(user_id, tier)
+            self._quota_repo.add_files(UUID(quota["id"]))  # réutilise le compteur fichiers
+        except Exception as exc:
+            logger.warning("quota persist image failed: %s", exc)
+
+    async def is_image_allowed(self, user_id: str) -> bool:
+        """Vérifie si l'utilisateur peut générer une image selon son plan."""
+        tier   = self._get_tier(user_id)
+        limits = TIER_LIMITS.get(tier, TIER_LIMITS["free"])
+        period = _period_key(tier)
+
+        # Gratuit : 1 image/jour
+        if tier == "free":
+            daily_limit = limits["images_daily"]
+            if daily_limit == 0:
+                return False
+            used = await self._rget(self._mk_img(user_id, period))
+            return used < daily_limit
+
+        # Océan : illimité (fair use)
+        if tier == "ocean":
+            return True
+
+        # Autres plans payants : quota mensuel
+        monthly_limit = limits.get("images_monthly", 0)
+        if monthly_limit == 0:
+            return False
+        used = await self._rget(self._mk_img(user_id, period))
+        return used < monthly_limit

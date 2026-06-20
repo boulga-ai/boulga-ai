@@ -8,7 +8,8 @@ from app.db.repositories.message_repository import MessageRepository
 from app.db.session import get_supabase
 from app.manager.llm_manager import llm_manager
 from app.manager.router_agent import router_agent
-from app.prompts.chat_prompts import FILE_GENERATION_ADDENDUM, TITLE_GENERATION_PROMPT
+from app.prompts.chat_prompts import FILE_GENERATION_ADDENDUM, IMAGE_GENERATION_ADDENDUM, TITLE_GENERATION_PROMPT
+from app.services.image_service import ImageGenerationError, generate_image
 from app.prompts.tool_prompts import get_full_system_prompt
 from app.services.code_executor import CodeExecutionError, CodeExecutor
 from app.services.file_service import FileService
@@ -49,9 +50,33 @@ _FILE_INTENT_RE = _re.compile(
     _re.IGNORECASE | _re.UNICODE,
 )
 
+_IMAGE_INTENT_RE = _re.compile(
+    r"\b(génère|générer|crée|créer|dessine|dessiner|illustre|illustrer|"
+    r"image|photo|illustration|logo|icône|icone|avatar|bannière|banniere|"
+    r"affiche|poster|visuel|artwork|portrait|paysage|fond.d.écran)\b",
+    _re.IGNORECASE | _re.UNICODE,
+)
+
+# Mots qui excluent l'intention image (fichiers bureautiques)
+_IMAGE_EXCLUSION_RE = _re.compile(
+    r"\b(word|excel|pdf|docx|xlsx|pptx|powerpoint|tableau.excel|feuille|"
+    r"fichier|document|rapport|facture|contrat|bilan)\b",
+    _re.IGNORECASE | _re.UNICODE,
+)
+
 
 def _wants_file(message: str) -> bool:
     return bool(_FILE_INTENT_RE.search(message))
+
+
+def _wants_image(message: str) -> bool:
+    """Détecte si l'utilisateur veut une image générée (prioritaire sur fichier)."""
+    if not _IMAGE_INTENT_RE.search(message):
+        return False
+    # Si le message mentionne explicitement un format bureautique → pas une image
+    if _IMAGE_EXCLUSION_RE.search(message):
+        return False
+    return True
 
 
 def _extract_python_blocks(text: str) -> list[str]:
@@ -265,6 +290,15 @@ class ChatService:
             }
             return
 
+        # c-bis. Vérification quota image (coupe tôt, avant même le stream texte)
+        if _wants_image(message):
+            if not await self._quota_svc.is_image_allowed(user_id):
+                yield {
+                    "type":    "error",
+                    "message": "image_quota_exceeded",
+                }
+                return
+
         # d. Routage Automatique (si activé et tier Source+)
         tier = self._sub_svc.get_tier(user_id)
         if auto_route and tier in _ROUTING_TIERS:
@@ -321,9 +355,12 @@ class ChatService:
                     }
                     break
 
-        # i. Détecter si l'utilisateur veut générer un fichier
-        enable_code_exec = _wants_file(message)
-        if enable_code_exec:
+        # i. Détecter l'intention (image prioritaire sur fichier bureautique)
+        wants_img = _wants_image(message)
+        enable_code_exec = _wants_file(message) and not wants_img
+        if wants_img:
+            system_prompt = system_prompt + IMAGE_GENERATION_ADDENDUM
+        elif enable_code_exec:
             system_prompt = system_prompt + FILE_GENERATION_ADDENDUM
 
         # j. Streamer via llm_manager
@@ -390,6 +427,37 @@ class ChatService:
             await self._quota_svc.consume_tokens(user_id, tokens_est)
         except Exception:
             pass
+
+        # l-image. Générer l'image si demandée
+        if wants_img:
+            try:
+                await self._quota_svc.consume_image(user_id)
+                img_result = await generate_image(
+                    provider=provider,
+                    prompt=message,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    message_id=assistant_msg["id"] if assistant_msg else None,
+                )
+                # Note discrète si fallback vers GPT Image
+                if img_result["used_fallback"]:
+                    yield {
+                        "type": "chunk",
+                        "text": "\n\n*Image générée via GPT Image.*",
+                    }
+                yield {
+                    "type":       "file_ready",
+                    "file_id":    img_result["file_id"],
+                    "filename":   img_result["filename"],
+                    "mime_type":  "image/png",
+                    "size_bytes": img_result["size_bytes"],
+                    "url":        img_result["url"],
+                    "is_image":   True,
+                }
+            except ImageGenerationError as img_err:
+                yield {"type": "error", "message": f"Génération image échouée : {img_err}"}
+            except Exception as img_err:
+                yield {"type": "error", "message": f"Erreur image : {img_err}"}
 
         # l-bis. Stocker les fichiers binaires Gemini (code_execution inline_data)
         if gemini_binary_files:

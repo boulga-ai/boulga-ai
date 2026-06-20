@@ -197,7 +197,7 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
           }));
         },
 
-        onFileReady: (url, name, mimeType, sizeBytes) => {
+        onFileReady: (url, name, mimeType, sizeBytes, isImage) => {
           // Dériver l'extension depuis le mime_type
           const mimeToExt: Record<string, string> = {
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
@@ -206,31 +206,63 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
             "application/pdf": "pdf",
             "text/csv": "csv",
             "text/plain": "txt",
+            "image/png": "png",
+            "image/jpeg": "jpg",
+            "image/webp": "webp",
           };
           const format = mimeToExt[mimeType] ?? mimeType.split("/").pop() ?? "file";
 
           // Préfixer l'URL avec /backend pour le proxy Next.js
           const fullUrl = url.startsWith("/api/") ? `/backend${url}` : url;
 
-          useDocStore.getState().setFileReady({ url: fullUrl, name, format, size: sizeBytes });
-
-          // Mettre à jour le dernier message assistant avec les infos du fichier
-          set((s) => {
-            const messages = [...s.messages];
-            for (let i = messages.length - 1; i >= 0; i--) {
-              if (messages[i].role === "assistant") {
-                messages[i] = { ...messages[i], fileReady: { url: fullUrl, name, size: sizeBytes } };
-                break;
+          if (isImage) {
+            // Image générée → injection inline dans la bulle assistant
+            set((s) => {
+              const messages = [...s.messages];
+              for (let i = messages.length - 1; i >= 0; i--) {
+                if (messages[i].role === "assistant") {
+                  const current = messages[i].content ?? "";
+                  messages[i] = {
+                    ...messages[i],
+                    content: current + `\n\n![Image générée](${fullUrl})`,
+                    fileReady: { url: fullUrl, name, size: sizeBytes },
+                  };
+                  break;
+                }
               }
-            }
-            return { messages };
-          });
+              return { messages };
+            });
+            // Aussi mettre à jour streamingText pour la cohérence
+            set((s) => ({
+              streamingText: s.streamingText + `\n\n![Image générée](${fullUrl})`,
+            }));
 
-          useToastStore.getState().addToast({
-            type:    "info",
-            title:   "Votre fichier est prêt",
-            message: `${name} — cliquez pour le télécharger.`,
-          });
+            useToastStore.getState().addToast({
+              type:    "info",
+              title:   "Image générée",
+              message: `${name} — visible dans la conversation.`,
+            });
+          } else {
+            // Fichier bureautique → DocumentPanel
+            useDocStore.getState().setFileReady({ url: fullUrl, name, format, size: sizeBytes });
+
+            set((s) => {
+              const messages = [...s.messages];
+              for (let i = messages.length - 1; i >= 0; i--) {
+                if (messages[i].role === "assistant") {
+                  messages[i] = { ...messages[i], fileReady: { url: fullUrl, name, size: sizeBytes } };
+                  break;
+                }
+              }
+              return { messages };
+            });
+
+            useToastStore.getState().addToast({
+              type:    "info",
+              title:   "Votre fichier est prêt",
+              message: `${name} — cliquez pour le télécharger.`,
+            });
+          }
         },
 
         onDone: (messageId) => {
