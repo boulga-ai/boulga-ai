@@ -217,6 +217,8 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
 
           if (isImage) {
             // Image générée → injection inline dans la bulle assistant
+            // L'URL est une URL signée Supabase (pas besoin de Bearer token)
+            const imageUrl = fullUrl.startsWith("https://") ? fullUrl : fullUrl;
             set((s) => {
               const messages = [...s.messages];
               for (let i = messages.length - 1; i >= 0; i--) {
@@ -224,8 +226,8 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
                   const current = messages[i].content ?? "";
                   messages[i] = {
                     ...messages[i],
-                    content: current + `\n\n![Image générée](${fullUrl})`,
-                    fileReady: { url: fullUrl, name, size: sizeBytes },
+                    content: current + `\n\n![Image générée](${imageUrl})`,
+                    // Pas de fileReady pour les images → pas de lien téléchargement
                   };
                   break;
                 }
@@ -234,7 +236,7 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
             });
             // Aussi mettre à jour streamingText pour la cohérence
             set((s) => ({
-              streamingText: s.streamingText + `\n\n![Image générée](${fullUrl})`,
+              streamingText: s.streamingText + `\n\n![Image générée](${imageUrl})`,
             }));
 
             useToastStore.getState().addToast({

@@ -145,6 +145,25 @@ class FileService:
 
         return self._repo.create(data)
 
+    def get_signed_url(self, file_id: str, expires_in: int = 3600) -> str | None:
+        """Retourne une URL signée Supabase (valide expires_in secondes) pour un fichier généré."""
+        try:
+            meta = self.get_meta(file_id)
+            if not meta:
+                return None
+            storage_path = meta["storage_path"]
+            if not storage_path.startswith("generated/"):
+                return None
+            path_in_bucket = storage_path[len("generated/"):]
+            result = self._db.storage.from_(GENERATED_BUCKET).create_signed_url(
+                path=path_in_bucket,
+                expires_in=expires_in,
+            )
+            # Supabase SDK retourne {"signedURL": "https://..."} ou {"signed_url": ...}
+            return result.get("signedURL") or result.get("signed_url") or None
+        except Exception:
+            return None
+
     def get_file_content_for_llm(
         self,
         file_id: str,

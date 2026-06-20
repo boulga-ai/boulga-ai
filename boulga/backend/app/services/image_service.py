@@ -151,9 +151,13 @@ async def generate_image(
         message_id=message_id,
     )
 
+    # URL signée Supabase pour affichage inline dans le navigateur (pas de Bearer requis)
+    signed_url = file_svc.get_signed_url(record["id"], expires_in=7200)
+    display_url = signed_url if signed_url else f"/api/files/{record['id']}/download"
+
     return {
         "file_id":       record["id"],
-        "url":           f"/api/files/{record['id']}/download",
+        "url":           display_url,
         "filename":      filename,
         "mime_type":     "image/png",
         "size_bytes":    len(image_bytes),
