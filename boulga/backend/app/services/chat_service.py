@@ -9,7 +9,7 @@ from app.db.session import get_supabase
 from app.manager.llm_manager import llm_manager
 from app.manager.router_agent import router_agent
 from app.prompts.chat_prompts import FILE_GENERATION_ADDENDUM, IMAGE_GENERATION_ADDENDUM, TITLE_GENERATION_PROMPT
-from app.services.image_service import ImageGenerationError, generate_image
+from app.services.image_service import ImageGenerationError, generate_image, wants_image_modification
 from app.prompts.tool_prompts import get_full_system_prompt
 from app.services.code_executor import CodeExecutionError, CodeExecutor
 from app.services.file_service import FileService
@@ -82,6 +82,36 @@ def _wants_image(message: str) -> bool:
 def _extract_python_blocks(text: str) -> list[str]:
     """Extrait les blocs ```python ... ``` d'un texte (fallback si code_execution inactif)."""
     return _re.findall(r"```python\s*\n(.*?)\n```", text, _re.DOTALL)
+
+
+def _get_last_image_from_history(history: list[dict]) -> bytes | None:
+    """
+    Cherche dans l'historique la dernière image générée par l'assistant.
+    Retourne les bytes de l'image si trouvée, None sinon.
+    Cherche le pattern ![...](https://...supabase.co/.../image_*.png) dans le contenu.
+    """
+    import re as re_mod
+    import httpx as _httpx
+
+    url_re = re_mod.compile(
+        r"!\[.*?\]\((https://[^\s)]+\.png[^\s)]*)\)",
+        re_mod.IGNORECASE,
+    )
+    # Parcourir l'historique du plus récent au plus ancien
+    for msg in reversed(history):
+        if msg.get("role") not in ("assistant", "model"):
+            continue
+        content = msg.get("content", "")
+        match = url_re.search(content)
+        if match:
+            img_url = match.group(1)
+            try:
+                resp = _httpx.get(img_url, timeout=15.0)
+                resp.raise_for_status()
+                return resp.content
+            except Exception:
+                return None
+    return None
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -446,12 +476,19 @@ class ChatService:
         if wants_img:
             try:
                 await self._quota_svc.consume_image(user_id)
+
+                # Img2img : si l'utilisateur demande une modification, passer l'image précédente
+                prev_image_bytes: bytes | None = None
+                if wants_image_modification(message):
+                    prev_image_bytes = _get_last_image_from_history(history)
+
                 img_result = await generate_image(
                     provider=provider,
                     prompt=message,
                     user_id=user_id,
                     conversation_id=conversation_id,
                     message_id=assistant_msg["id"] if assistant_msg else None,
+                    previous_image_bytes=prev_image_bytes,
                 )
                 # Note discrète si fallback vers GPT Image
                 if img_result["used_fallback"]:
@@ -492,7 +529,7 @@ class ChatService:
                         "filename": gf["filename"],
                         "mime_type": gf["mime_type"],
                         "size_bytes": len(gf["data"]),
-                        "url": f"/api/files/{record['id']}/download",
+                        "url": record.get("signed_url") or f"/api/files/{record['id']}/download",
                     }
                 except Exception as store_err:
                     yield {"type": "error", "message": f"Erreur stockage fichier Gemini : {store_err}"}
@@ -517,7 +554,7 @@ class ChatService:
                         "filename": filename,
                         "mime_type": mime_type,
                         "size_bytes": len(file_bytes),
-                        "url": f"/api/files/{record['id']}/download",
+                        "url": record.get("signed_url") or f"/api/files/{record['id']}/download",
                     }
                 except Exception as e:
                     yield {"type": "error", "message": f"Erreur création fichier Claude : {e}"}
@@ -551,7 +588,7 @@ class ChatService:
                             "filename": file_info["filename"],
                             "mime_type": file_info["mime_type"],
                             "size_bytes": len(file_info["content"]),
-                            "url": f"/api/files/{record['id']}/download",
+                            "url": record.get("signed_url") or f"/api/files/{record['id']}/download",
                         }
                     except Exception as store_err:
                         yield {"type": "error", "message": f"Erreur stockage fichier : {store_err}"}

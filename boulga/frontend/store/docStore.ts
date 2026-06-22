@@ -11,8 +11,20 @@ export interface DocumentState {
 export interface FileReady {
   url: string;
   name: string;
-  format: string; // extension : "docx", "xlsx", "pdf"…
+  format: string; // extension : "docx", "xlsx", "pdf", "png"…
   size: number;
+  mimeType?: string;
+}
+
+/** Un artifact = fichier généré par le LLM, lié à un message */
+export interface Artifact {
+  id: string;          // file_id backend
+  messageId?: string;  // message auquel il est lié (optionnel)
+  name: string;
+  url: string;         // URL signée Supabase
+  mimeType: string;
+  size: number;
+  createdAt: number;   // Date.now()
 }
 
 // ── State / Actions ───────────────────────────────────────────────────────────
@@ -20,8 +32,13 @@ export interface FileReady {
 interface DocStoreState {
   currentDocument: DocumentState | null;
   fileReady: FileReady | null;
-  /** Index de version affiché (null = version courante) */
   viewingVersionIndex: number | null;
+  /** Liste de tous les artifacts générés dans la session */
+  artifacts: Artifact[];
+  /** Index de l'artifact affiché dans le panel (null = panel sur document texte) */
+  currentArtifactIndex: number | null;
+  /** Panel ouvert */
+  panelOpen: boolean;
 }
 
 interface DocStoreActions {
@@ -31,6 +48,14 @@ interface DocStoreActions {
   clearFileReady: () => void;
   closeDocument: () => void;
   goToVersion: (index: number) => void;
+  /** Ajoute un artifact et l'ouvre dans le panel */
+  addArtifact: (artifact: Artifact) => void;
+  /** Navigue vers un artifact par index */
+  goToArtifact: (index: number) => void;
+  /** Ferme le panel */
+  closePanel: () => void;
+  /** Ouvre le panel sur l'artifact courant ou le document */
+  openPanel: () => void;
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -39,22 +64,29 @@ export const useDocStore = create<DocStoreState & DocStoreActions>((set, get) =>
   currentDocument: null,
   fileReady: null,
   viewingVersionIndex: null,
+  artifacts: [],
+  currentArtifactIndex: null,
+  panelOpen: false,
 
   openDocument: (content: string, format = "markdown") => {
     set({
       currentDocument: { content, format, versions: [] },
       viewingVersionIndex: null,
+      currentArtifactIndex: null,
+      panelOpen: true,
     });
   },
 
   updateDocument: (content: string) => {
     const { currentDocument } = get();
     if (!currentDocument) {
-      // Pas encore de document → ouvrir
-      set({ currentDocument: { content, format: "markdown", versions: [] }, viewingVersionIndex: null });
+      set({
+        currentDocument: { content, format: "markdown", versions: [] },
+        viewingVersionIndex: null,
+        panelOpen: true,
+      });
       return;
     }
-    // Ajouter la version courante aux versions précédentes
     set({
       currentDocument: {
         ...currentDocument,
@@ -67,23 +99,10 @@ export const useDocStore = create<DocStoreState & DocStoreActions>((set, get) =>
 
   setFileReady: (info: FileReady) => {
     set({ fileReady: info });
-    // Si pas de document texte ouvert, créer un document "file" minimaliste
-    const { currentDocument } = get();
-    if (!currentDocument) {
-      set({
-        currentDocument: {
-          content: `Fichier **${info.name}** prêt au téléchargement.`,
-          format: "file",
-          versions: [],
-        },
-        viewingVersionIndex: null,
-      });
-    }
   },
 
   clearFileReady: () => {
     set({ fileReady: null });
-    // Si le document courant était un document "file" minimaliste, le fermer aussi
     const { currentDocument } = get();
     if (currentDocument?.format === "file") {
       set({ currentDocument: null, viewingVersionIndex: null });
@@ -91,14 +110,44 @@ export const useDocStore = create<DocStoreState & DocStoreActions>((set, get) =>
   },
 
   closeDocument: () => {
-    set({ currentDocument: null, fileReady: null, viewingVersionIndex: null });
+    set({
+      currentDocument: null,
+      fileReady: null,
+      viewingVersionIndex: null,
+      currentArtifactIndex: null,
+      panelOpen: false,
+    });
   },
 
   goToVersion: (index: number) => {
     const { currentDocument } = get();
     if (!currentDocument) return;
     if (index < 0 || index > currentDocument.versions.length) return;
-    // index = versions.length → version courante
     set({ viewingVersionIndex: index < currentDocument.versions.length ? index : null });
+  },
+
+  addArtifact: (artifact: Artifact) => {
+    const { artifacts } = get();
+    const newArtifacts = [...artifacts, artifact];
+    set({
+      artifacts: newArtifacts,
+      currentArtifactIndex: newArtifacts.length - 1,
+      currentDocument: null,
+      panelOpen: true,
+    });
+  },
+
+  goToArtifact: (index: number) => {
+    const { artifacts } = get();
+    if (index < 0 || index >= artifacts.length) return;
+    set({ currentArtifactIndex: index, currentDocument: null });
+  },
+
+  closePanel: () => {
+    set({ panelOpen: false });
+  },
+
+  openPanel: () => {
+    set({ panelOpen: true });
   },
 }));

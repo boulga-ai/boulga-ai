@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git commit -m ':*)",
+      "Bash(python3 -c ':*)",
+      "Bash(python3 -c \"import docx; import openpyxl; import reportlab; import pptx; print\\('ALL OK'\\)\")",
+      "Bash(python3 -c \"import reportlab; import pptx; print\\('OK'\\)\")",
+      "Bash(grep -r \"interface Message\\\\|type Message\" /workspaces/boulga-ai/boulga/frontend/types*)"
+    ]
+  }
+}

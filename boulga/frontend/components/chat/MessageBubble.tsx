@@ -5,9 +5,14 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import type { Components } from "react-markdown";
-import { IconPaperclip } from "@tabler/icons-react";
+import {
+  IconPaperclip, IconFileText, IconFileSpreadsheet,
+  IconPresentationAnalytics, IconPhoto, IconFileTypePdf,
+  IconExternalLink, IconDownload,
+} from "@tabler/icons-react";
 import type { Message } from "@/types";
 import { getStoredToken } from "@/store/authStore";
+import { useDocStore } from "@/store/docStore";
 import CodeBlock from "./CodeBlock";
 import Lightbox from "./Lightbox";
 import BubbleActions from "./BubbleActions";
@@ -50,6 +55,94 @@ function ThinkingIndicator() {
       <span className="thinking-dot" />
       <span className="thinking-dot" />
       <span className="thinking-dot" />
+    </div>
+  );
+}
+
+// ── ArtifactCard ──────────────────────────────────────────────────────────────
+
+const MIME_META: Record<string, { label: string; color: string; bg: string; Icon: React.ComponentType<{ size?: number | string; className?: string }> }> = {
+  "application/pdf":                                                                           { label: "PDF",   color: "text-red-700",   bg: "bg-red-50",   Icon: IconFileTypePdf },
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":                  { label: "Word",  color: "text-blue-700",  bg: "bg-blue-50",  Icon: IconFileText },
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":                        { label: "Excel", color: "text-green-700", bg: "bg-green-50", Icon: IconFileSpreadsheet },
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation":                { label: "PPT",   color: "text-orange-700",bg: "bg-orange-50",Icon: IconPresentationAnalytics },
+  "text/csv":                                                                                  { label: "CSV",   color: "text-green-700", bg: "bg-green-50", Icon: IconFileSpreadsheet },
+  "text/plain":                                                                                { label: "TXT",   color: "text-neutral-600",bg: "bg-neutral-50",Icon: IconFileText },
+  "image/png":                                                                                 { label: "Image", color: "text-purple-700", bg: "bg-purple-50", Icon: IconPhoto },
+  "image/jpeg":                                                                                { label: "Image", color: "text-purple-700", bg: "bg-purple-50", Icon: IconPhoto },
+};
+
+function ArtifactCard({ fileReady }: { fileReady: NonNullable<Message["fileReady"]> }) {
+  const meta = MIME_META[fileReady.mimeType ?? ""] ?? { label: "Fichier", color: "text-neutral-600", bg: "bg-neutral-50", Icon: IconPaperclip };
+  const { Icon, label, color, bg } = meta;
+  const openPanel = useDocStore((s) => s.openPanel);
+  const artifacts = useDocStore((s) => s.artifacts);
+  const goToArtifact = useDocStore((s) => s.goToArtifact);
+
+  const handleOpen = () => {
+    // Retrouver l'artifact correspondant dans la liste
+    const idx = artifacts.findLastIndex((a) => a.url === fileReady.url);
+    if (idx >= 0) goToArtifact(idx);
+    openPanel();
+  };
+
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const token = getStoredToken();
+      const res = await fetch(fileReady.url, {
+        headers: token && !fileReady.url.startsWith("https://") ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error();
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = fileReady.name;
+      a.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      window.open(fileReady.url, "_blank");
+    }
+  };
+
+  return (
+    <div
+      className="mt-3 flex items-center gap-3 rounded-xl border border-neutral-border bg-white px-3 py-2.5 cursor-pointer hover:bg-neutral-50 transition-colors"
+      style={{ borderColor: "#E0E4EC" }}
+      onClick={handleOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === "Enter" && handleOpen()}
+    >
+      {/* Icône type */}
+      <div className={`flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-lg ${bg}`}>
+        <Icon size={18} className={color} />
+      </div>
+
+      {/* Infos */}
+      <div className="flex-1 min-w-0">
+        <p className="text-[13px] font-medium text-neutral-900 truncate">{fileReady.name}</p>
+        <p className="text-[11px] text-neutral-400">{label} · {formatBytes(fileReady.size)}</p>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-1">
+        <button
+          className="p-1.5 rounded-lg hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700 transition-colors"
+          title="Ouvrir"
+          onClick={(e) => { e.stopPropagation(); handleOpen(); }}
+        >
+          <IconExternalLink size={15} />
+        </button>
+        <button
+          className="p-1.5 rounded-lg hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700 transition-colors"
+          title="Télécharger"
+          onClick={handleDownload}
+        >
+          <IconDownload size={15} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -296,37 +389,9 @@ export default function MessageBubble({
               <span className="text-neutral-text-tertiary text-[13px]">—</span>
             )}
 
-            {/* Indicateur fichier généré */}
+            {/* Artifact card — fichier ou image générée */}
             {!isStreaming && message.fileReady && (
-              <div className="mt-3 pt-3 border-t border-neutral-border/50">
-                <a
-                  href="#"
-                  onClick={async (e) => {
-                    e.preventDefault();
-                    if (!message.fileReady) return;
-                    try {
-                      const token = getStoredToken();
-                      const res = await fetch(message.fileReady.url, {
-                        headers: token ? { Authorization: `Bearer ${token}` } : {},
-                      });
-                      if (!res.ok) throw new Error(`Erreur ${res.status}`);
-                      const blob = await res.blob();
-                      const objectUrl = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = objectUrl;
-                      a.download = message.fileReady.name;
-                      a.click();
-                      URL.revokeObjectURL(objectUrl);
-                    } catch {
-                      window.open(message.fileReady.url, "_blank");
-                    }
-                  }}
-                  className="flex items-center gap-2 text-[13px] font-body text-blue-700 hover:underline"
-                >
-                  <IconPaperclip size={14} />
-                  {message.fileReady.name} ({formatBytes(message.fileReady.size)}) — Télécharger
-                </a>
-              </div>
+              <ArtifactCard fileReady={message.fileReady} />
             )}
           </div>
 

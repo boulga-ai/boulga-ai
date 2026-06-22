@@ -143,7 +143,19 @@ class FileService:
             "size_bytes": len(content),
         }
 
-        return self._repo.create(data)
+        record = self._repo.create(data)
+
+        # Générer une URL signée Supabase (7200s = 2h) pour accès public direct
+        try:
+            signed = self._db.storage.from_(GENERATED_BUCKET).create_signed_url(
+                path=path_in_bucket,
+                expires_in=7200,
+            )
+            record["signed_url"] = signed.get("signedURL") or signed.get("signed_url") or None
+        except Exception:
+            record["signed_url"] = None
+
+        return record
 
     def get_signed_url(self, file_id: str, expires_in: int = 3600) -> str | None:
         """Retourne une URL signée Supabase (valide expires_in secondes) pour un fichier généré."""

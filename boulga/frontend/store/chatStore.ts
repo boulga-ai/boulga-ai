@@ -198,27 +198,21 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
         },
 
         onFileReady: (url, name, mimeType, sizeBytes, isImage) => {
-          // Dériver l'extension depuis le mime_type
-          const mimeToExt: Record<string, string> = {
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
-            "application/pdf": "pdf",
-            "text/csv": "csv",
-            "text/plain": "txt",
-            "image/png": "png",
-            "image/jpeg": "jpg",
-            "image/webp": "webp",
-          };
-          const format = mimeToExt[mimeType] ?? mimeType.split("/").pop() ?? "file";
-
-          // Préfixer l'URL avec /backend pour le proxy Next.js
+          // URL directe (Supabase signée) ou fallback proxy backend
           const fullUrl = url.startsWith("/api/") ? `/backend${url}` : url;
 
+          // Créer l'artifact et l'ajouter au store (ouvre le panel automatiquement)
+          useDocStore.getState().addArtifact({
+            id: `artifact-${Date.now()}`,
+            name,
+            url: fullUrl,
+            mimeType,
+            size: sizeBytes,
+            createdAt: Date.now(),
+          });
+
           if (isImage) {
-            // Image générée → injection inline dans la bulle assistant
-            // L'URL est une URL signée Supabase (pas besoin de Bearer token)
-            const imageUrl = fullUrl.startsWith("https://") ? fullUrl : fullUrl;
+            // Injecter aussi l'image inline dans la bulle pour contexte visuel
             set((s) => {
               const messages = [...s.messages];
               for (let i = messages.length - 1; i >= 0; i--) {
@@ -226,45 +220,35 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
                   const current = messages[i].content ?? "";
                   messages[i] = {
                     ...messages[i],
-                    content: current + `\n\n![Image générée](${imageUrl})`,
-                    // Pas de fileReady pour les images → pas de lien téléchargement
+                    content: current + `\n\n![Image générée](${fullUrl})`,
                   };
                   break;
                 }
               }
               return { messages };
             });
-            // Aussi mettre à jour streamingText pour la cohérence
             set((s) => ({
-              streamingText: s.streamingText + `\n\n![Image générée](${imageUrl})`,
+              streamingText: s.streamingText + `\n\n![Image générée](${fullUrl})`,
             }));
-
-            useToastStore.getState().addToast({
-              type:    "info",
-              title:   "Image générée",
-              message: `${name} — visible dans la conversation.`,
-            });
-          } else {
-            // Fichier bureautique → DocumentPanel
-            useDocStore.getState().setFileReady({ url: fullUrl, name, format, size: sizeBytes });
-
-            set((s) => {
-              const messages = [...s.messages];
-              for (let i = messages.length - 1; i >= 0; i--) {
-                if (messages[i].role === "assistant") {
-                  messages[i] = { ...messages[i], fileReady: { url: fullUrl, name, size: sizeBytes } };
-                  break;
-                }
-              }
-              return { messages };
-            });
-
-            useToastStore.getState().addToast({
-              type:    "info",
-              title:   "Votre fichier est prêt",
-              message: `${name} — cliquez pour le télécharger.`,
-            });
           }
+
+          // Stocker fileReady sur le message pour la artifact card dans la bulle
+          set((s) => {
+            const messages = [...s.messages];
+            for (let i = messages.length - 1; i >= 0; i--) {
+              if (messages[i].role === "assistant") {
+                messages[i] = { ...messages[i], fileReady: { url: fullUrl, name, size: sizeBytes, mimeType } };
+                break;
+              }
+            }
+            return { messages };
+          });
+
+          useToastStore.getState().addToast({
+            type:    "info",
+            title:   isImage ? "Image générée" : "Fichier prêt",
+            message: name,
+          });
         },
 
         onDone: (messageId) => {

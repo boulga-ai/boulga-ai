@@ -96,6 +96,7 @@ export interface Message {
     url: string;
     name: string;
     size: number;
+    mimeType?: string;
   };
 }
 
