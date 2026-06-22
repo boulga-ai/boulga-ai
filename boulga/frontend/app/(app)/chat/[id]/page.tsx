@@ -1,17 +1,14 @@
 "use client";
 
 import { useEffect } from "react";
+import { useParams } from "next/navigation";
 import { useChatStore } from "@/store/chatStore";
 import LLMSelector from "@/components/chat/LLMSelector";
 import ChatWindow from "@/components/chat/ChatWindow";
 import ChatInput from "@/components/chat/ChatInput";
 
-interface Props {
-  params: { id: string };
-}
-
-export default function ConversationPage({ params }: Props) {
-  const { id } = params;
+export default function ConversationPage() {
+  const { id } = useParams<{ id: string }>();
   const loadConversation = useChatStore((s) => s.loadConversation);
   const currentConversationId = useChatStore((s) => s.currentConversationId);
 

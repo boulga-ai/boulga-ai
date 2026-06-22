@@ -81,7 +81,11 @@ function ArtifactCard({ fileReady }: { fileReady: NonNullable<Message["fileReady
 
   const handleOpen = () => {
     // Retrouver l'artifact correspondant dans la liste
-    const idx = artifacts.findLastIndex((a) => a.url === fileReady.url);
+    // findLastIndex non supporté partout → recherche manuelle depuis la fin
+    let idx = -1;
+    for (let i = artifacts.length - 1; i >= 0; i--) {
+      if (artifacts[i].url === fileReady.url) { idx = i; break; }
+    }
     if (idx >= 0) goToArtifact(idx);
     openPanel();
   };
