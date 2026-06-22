@@ -1,19 +1,22 @@
 "use client";
 
 import { useEffect } from "react";
-import { useParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useChatStore } from "@/store/chatStore";
 import LLMSelector from "@/components/chat/LLMSelector";
 import ChatWindow from "@/components/chat/ChatWindow";
 import ChatInput from "@/components/chat/ChatInput";
 
 export default function ConversationPage() {
-  const { id } = useParams<{ id: string }>();
+  // usePathname évite useParams qui appelle use() en interne (bug Next.js 14.2.35)
+  const pathname = usePathname();
+  const id = pathname.split("/").pop() ?? "";
+
   const loadConversation = useChatStore((s) => s.loadConversation);
   const currentConversationId = useChatStore((s) => s.currentConversationId);
 
   useEffect(() => {
-    if (currentConversationId !== id) {
+    if (id && currentConversationId !== id) {
       loadConversation(id);
     }
   }, [id, currentConversationId, loadConversation]);
