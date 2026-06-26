@@ -27,6 +27,8 @@ class ChatRequest(BaseModel):
     file_ids: list[str] = []
     tool_slug: Optional[str] = None
     auto_route: bool = False  # Routage Automatique Intelligent (branché au prompt 8)
+    effort: str = "medium"        # Niveau d'effort : low | medium | high | max
+    enable_search: bool = False   # Recherche web (Gemini + Claude uniquement)
 
 
 class ConversationOut(BaseModel):

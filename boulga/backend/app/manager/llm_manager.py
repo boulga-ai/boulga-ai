@@ -1,28 +1,31 @@
 import base64
+import json
+import logging
 from typing import AsyncIterator, Optional
 
 import litellm
 
 from app.config import settings
 from app.core.exceptions import BoulgaError
-from app.manager.registry import LLMProvider, is_provider_active, resolve_model
+from app.manager.registry import is_provider_active, resolve_model
+
+logger = logging.getLogger(__name__)
 
 # Mapping Boulga model_id → identifiant OpenRouter
 _OPENROUTER_MODELS: dict[str, str] = {
+    # Gemini (Google)
     "gemini-2.5-flash":  "google/gemini-2.5-flash",
     "gemini-2.5-pro":    "google/gemini-2.5-pro",
-    "claude-haiku-4-5":  "anthropic/claude-haiku-4-5",
-    "claude-sonnet-4-6": "anthropic/claude-sonnet-4-6",
+    # Claude (Anthropic) — OpenRouter utilise des points dans le numéro de version
+    "claude-haiku-4-5":  "anthropic/claude-haiku-4.5",
+    "claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
+    "claude-opus-4-6":   "anthropic/claude-opus-4.6",
+    # ChatGPT (OpenAI)
     "gpt-5.5-instant":   "openai/gpt-4o-mini",
     "gpt-5.5-pro":       "openai/gpt-4o",
+    # DeepSeek
     "deepseek-v4-flash": "deepseek/deepseek-chat",
     "deepseek-v4-pro":   "deepseek/deepseek-r1",
-}
-
-# Mapping Boulga model_id → Anthropic model_id (pour le SDK direct)
-_ANTHROPIC_MODELS: dict[str, str] = {
-    "claude-haiku-4-5":  "claude-haiku-4-5-20251001",
-    "claude-sonnet-4-6": "claude-sonnet-4-6",
 }
 
 # En-têtes requis par OpenRouter
@@ -31,33 +34,188 @@ _OR_HEADERS: dict[str, str] = {
     "X-Title": "Boulga",
 }
 
-# Outil create_file pour Claude
-_CLAUDE_CREATE_FILE_TOOL = {
-    "name": "create_file",
-    "description": (
-        "Génère un fichier téléchargeable. Utilise cet outil quand l'utilisateur "
-        "demande un document Word, Excel, PDF, CSV ou autre fichier."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "filename": {
-                "type": "string",
-                "description": "Nom du fichier avec extension (ex: rapport.docx)",
-            },
-            "format": {
-                "type": "string",
-                "enum": ["docx", "xlsx", "csv", "txt", "md"],
-            },
-            "content": {
-                "description": (
-                    "Contenu: docx→texte Markdown. "
-                    "xlsx→liste [{name,rows:[[val,...]]}]. "
-                    "csv/txt/md→texte brut."
-                ),
+# Mapping effort → température
+_OR_TEMPERATURE: dict[str, float] = {
+    "low": 0.2, "medium": 0.5, "high": 0.8, "max": 1.0,
+}
+
+# Max tokens par modèle pour les sorties longues
+_MAX_OUTPUT_TOKENS: dict[str, int] = {
+    "gemini-2.5-flash":  16384,
+    "gemini-2.5-pro":    16384,
+    "claude-haiku-4-5":  8192,
+    "claude-sonnet-4-6": 16384,
+    "claude-opus-4-6":   16384,
+    "gpt-5.5-instant":   16384,
+    "gpt-5.5-pro":       16384,
+    "deepseek-v4-flash": 16384,
+    "deepseek-v4-pro":   16384,
+}
+
+
+def _max_tokens(model_id: str) -> int:
+    return _MAX_OUTPUT_TOKENS.get(model_id, 8192)
+
+async def _completion_with_fallback(kwargs: dict):
+    try:
+        return await litellm.acompletion(**kwargs)
+    except litellm.ContextWindowExceededError as exc:
+        max_tokens = kwargs.get("max_tokens")
+        if isinstance(max_tokens, int) and max_tokens > 8192:
+            fallback_tokens = max(max_tokens // 2, 8192)
+            logger.warning(
+                "Context window exceeded model=%s; retrying with max_tokens=%s (was %s)",
+                kwargs.get("model"),
+                fallback_tokens,
+                max_tokens,
+            )
+            kwargs["max_tokens"] = fallback_tokens
+            return await litellm.acompletion(**kwargs)
+        raise
+
+# ── Tool create_file (schéma universel OpenRouter) ───────────────────────────
+#
+# Règles de compatibilité maximale (Gemini, Claude, GPT, DeepSeek) :
+#   - Toutes les propriétés dans required
+#   - additionalProperties: false sur les objets
+#
+# Phase 1 : le LLM signale l'intention et le format (sans code).
+# Phase 2 : _handle_file_creation charge le SKILL.md et génère le code via un second appel LLM.
+# Phase 3 : CodeExecutor exécute le code généré.
+#
+CREATE_FILE_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "create_file",
+        "description": (
+            "Génère un fichier téléchargeable quand l'utilisateur demande un document "
+            "(Word, Excel, PDF, PowerPoint, CSV, texte). "
+            "Appelle cet outil avec le format, le nom de fichier et un résumé du contenu attendu. "
+            "Le backend se charge de générer le fichier — tu n'as pas besoin d'écrire de code."
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["filename", "format", "summary"],
+            "properties": {
+                "filename": {
+                    "type": "string",
+                    "description": "Nom du fichier avec extension (ex: rapport_ventes.xlsx)",
+                },
+                "format": {
+                    "type": "string",
+                    "enum": ["docx", "xlsx", "pdf", "pptx", "csv", "txt"],
+                    "description": "Format du fichier",
+                },
+                "summary": {
+                    "type": "string",
+                    "description": (
+                        "Description précise du contenu attendu (2-5 phrases). "
+                        "Inclure : structure, données à mettre, style souhaité, langue. "
+                        "Ex: 'Rapport de ventes mensuel avec tableau des 5 meilleurs produits, "
+                        "graphique en barres, style professionnel bleu marine.'"
+                    ),
+                },
             },
         },
-        "required": ["filename", "format", "content"],
+    },
+}
+
+CREATE_DOCUMENT_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "create_document",
+        "description": (
+            "Produit un document téléchargeable (Word ou PDF) quand l'utilisateur en a besoin. "
+            "Tu composes le document librement avec des blocs typés en JSON. "
+            "Appelle cet outil quand un document est pertinent."
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["format", "filename", "summary", "document"],
+            "properties": {
+                "format": {
+                    "type": "string",
+                    "enum": ["docx", "pdf"],
+                    "description": "Format de sortie du document.",
+                },
+                "filename": {
+                    "type": "string",
+                    "description": "Nom du fichier avec extension.",
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "Résumé court affiché à l'utilisateur.",
+                },
+                "document": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "properties": {
+                        "title": {"type": "string"},
+                        "blocks": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": True,
+                                "properties": {
+                                    "type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "heading",
+                                            "paragraph",
+                                            "bullet_list",
+                                            "numbered_list",
+                                            "table",
+                                            "block",
+                                            "divider",
+                                            "spacer",
+                                            "page_break",
+                                        ],
+                                    },
+                                    "text": {"type": "string"},
+                                    "level": {"type": "integer"},
+                                    "color": {"type": "string"},
+                                    "align": {"type": "string"},
+                                    "size": {"type": "integer"},
+                                    "bold": {"type": "boolean"},
+                                    "italic": {"type": "boolean"},
+                                    "bullet": {"type": "string"},
+                                    "items": {
+                                        "type": "array",
+                                        "items": {"type": ["string", "object"]},
+                                    },
+                                    "headers": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                    "rows": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
+                                        },
+                                    },
+                                    "content": {
+                                        "oneOf": [
+                                            {"type": "string"},
+                                            {"type": "array", "items": {"type": "object"}},
+                                        ]
+                                    },
+                                    "bg": {"type": "string"},
+                                    "text_color": {"type": "string"},
+                                    "border": {"type": "string"},
+                                    "header_bg": {"type": "string"},
+                                    "header_color": {"type": "string"},
+                                    "zebra": {"type": "string"},
+                                    "thickness": {"type": "integer"},
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
     },
 }
 
@@ -70,30 +228,14 @@ def _or_model(model_id: str) -> str:
 
 class LLMManager:
     """
-    Orchestrateur LLM.
-    - Génération de fichiers Gemini  → google-genai SDK avec ToolCodeExecution
-    - Génération de fichiers Claude  → anthropic SDK avec l'outil create_file
-    - Tout le reste                  → LiteLLM + OpenRouter
+    Orchestrateur LLM — tout passe par LiteLLM + OpenRouter.
+
+    Méthodes publiques :
+      stream_with_tools() — streaming texte + outils simultanés (chemin principal)
+      stream_chat()       — streaming texte pur, sans outils (comparaison, etc.)
+      call_with_tools()   — non-streaming avec outils (fallback si streaming+tools défaillant)
+      generate_text()     — non-streaming sans outils (titres, résumés, routage)
     """
-
-    # ── Singletons SDK natifs ────────────────────────────────────────────
-
-    _genai_client = None   # google.genai.Client
-    _anthropic_client = None  # anthropic.AsyncAnthropic
-
-    def _get_gemini_client(self):
-        if self._genai_client is None:
-            from google import genai
-            self.__class__._genai_client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        return self._genai_client
-
-    def _get_anthropic_client(self):
-        if self._anthropic_client is None:
-            import anthropic
-            self.__class__._anthropic_client = anthropic.AsyncAnthropic(
-                api_key=settings.ANTHROPIC_API_KEY
-            )
-        return self._anthropic_client
 
     # ── Validation ──────────────────────────────────────────────────────
 
@@ -109,7 +251,7 @@ class LLMManager:
         except ValueError as exc:
             raise BoulgaError(str(exc), status_code=400, code="MODEL_NOT_FOUND")
 
-    # ── Construction des messages LiteLLM ────────────────────────────────
+    # ── Construction des messages ────────────────────────────────────────
 
     def _build_messages(
         self,
@@ -118,9 +260,8 @@ class LLMManager:
         files: Optional[list[dict]] = None,
     ) -> list[dict]:
         """
-        Convertit les messages Boulga (role user/model/assistant) en format
-        OpenAI/LiteLLM (role user/assistant/system).
-        Les images sont injectées en base64 dans le dernier message utilisateur.
+        Convertit les messages Boulga en format OpenAI/LiteLLM.
+        Fichiers binaires injectés en base64 dans le dernier message user.
         """
         result: list[dict] = []
 
@@ -129,16 +270,12 @@ class LLMManager:
 
         for msg in messages:
             role = msg.get("role", "user")
-            # Gemini utilise "model" ; LiteLLM attend "assistant"
             if role == "model":
                 role = "assistant"
             result.append({"role": role, "content": msg.get("content", "")})
 
-        # Injecter les fichiers images dans le dernier message utilisateur
         if files:
-            image_files = [
-                f for f in files if f.get("mime_type", "").startswith("image/")
-            ]
+            image_files = [f for f in files if f.get("mime_type", "").startswith("image/")]
             if image_files:
                 for i in range(len(result) - 1, -1, -1):
                     if result[i]["role"] == "user":
@@ -158,166 +295,88 @@ class LLMManager:
 
         return result
 
-    # ── Construction des messages google-genai ───────────────────────────
+    # ── Streaming texte + outils ─────────────────────────────────────────
 
-    def _build_gemini_contents(
+    async def stream_with_tools(
         self,
+        provider: str,
+        model_id: str,
         messages: list[dict],
+        system_prompt: str = "",
         files: Optional[list[dict]] = None,
-    ):
+        tools: Optional[list[dict]] = None,
+        effort: str = "medium",
+    ) -> AsyncIterator[dict]:
         """
-        Convertit les messages Boulga en liste de genai_types.Content
-        pour le SDK google-genai natif.
-        Les fichiers binaires (images, PDF) sont injectés dans le dernier
-        message utilisateur.
-        """
-        from google.genai import types as genai_types
+        Streaming avec outils (tool_choice="auto").
 
-        contents = []
-        for msg in messages:
-            role = msg.get("role", "user")
-            # Normaliser : "assistant" → "model"
-            if role == "assistant":
-                role = "model"
-            content_text = msg.get("content", "")
-            contents.append(
-                genai_types.Content(
-                    role=role,
-                    parts=[genai_types.Part.from_text(text=content_text)],
+        Yield :
+          {"type": "chunk", "text": str}                        — deltas de texte en temps réel
+          {"type": "tool_call", "name": str, "arguments": dict} — outil appelé (fin de stream)
+
+        Les fragments d'arguments du tool_call sont accumulés pendant le stream
+        (le code Python arrive en morceaux) et parsés en JSON à la fin.
+        """
+        self._check_provider_model(provider, model_id)
+
+        litellm_messages = self._build_messages(messages, system_prompt, files)
+
+        max_tokens = _max_tokens(model_id)
+        logger.debug("LLM stream_with_tools model=%s provider=%s max_tokens=%d", model_id, provider, max_tokens)
+        kwargs: dict = {
+            "model": _or_model(model_id),
+            "messages": litellm_messages,
+            "stream": True,
+            "temperature": _OR_TEMPERATURE.get(effort, 0.5),
+            "max_tokens": max_tokens,
+            "api_key": settings.OPENROUTER_API_KEY,
+            "extra_headers": _OR_HEADERS,
+            "timeout": 120,
+            "tool_choice": "auto",
+        }
+        if tools:
+            kwargs["tools"] = tools
+
+        tool_calls_acc: dict[int, dict] = {}
+
+        response = await _completion_with_fallback(kwargs)
+
+        async for chunk in response:
+            choice = chunk.choices[0]
+            delta = choice.delta
+
+            # Deltas de texte → yield immédiatement
+            if delta and delta.content:
+                yield {"type": "chunk", "text": delta.content}
+
+            # Deltas de tool_call → accumuler
+            if delta and delta.tool_calls:
+                for tc_delta in delta.tool_calls:
+                    idx = tc_delta.index
+                    if idx not in tool_calls_acc:
+                        tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                    if tc_delta.id:
+                        tool_calls_acc[idx]["id"] = tc_delta.id
+                    if tc_delta.function:
+                        if tc_delta.function.name:
+                            tool_calls_acc[idx]["name"] += tc_delta.function.name
+                        if tc_delta.function.arguments:
+                            tool_calls_acc[idx]["arguments"] += tc_delta.function.arguments
+
+        if tool_calls_acc:
+            tc = tool_calls_acc[0]
+            try:
+                arguments = json.loads(tc["arguments"]) if tc["arguments"] else {}
+                yield {"type": "tool_call", "name": tc["name"], "arguments": arguments}
+            except json.JSONDecodeError:
+                logger.error(
+                    "Tool call JSON tronqué pour %s (len=%d) — fichier non généré",
+                    tc["name"],
+                    len(tc["arguments"] or ""),
                 )
-            )
+                yield {"type": "chunk", "text": "\n\n⚠️ La génération du document a échoué (réponse tronquée). Réessaie en simplifiant ta demande."}
 
-        # Injecter les fichiers binaires dans le dernier message user
-        if files:
-            for i in range(len(contents) - 1, -1, -1):
-                if contents[i].role == "user":
-                    extra_parts = []
-                    for f in files:
-                        extra_parts.append(
-                            genai_types.Part.from_bytes(
-                                data=f["data"],
-                                mime_type=f["mime_type"],
-                            )
-                        )
-                    contents[i] = genai_types.Content(
-                        role="user",
-                        parts=list(contents[i].parts) + extra_parts,
-                    )
-                    break
-
-        return contents
-
-    # ── Chemin Gemini natif (code_execution) ─────────────────────────────
-
-    async def _stream_gemini_code_exec(
-        self,
-        model_id: str,
-        messages: list[dict],
-        system_prompt: str = "",
-        files: Optional[list[dict]] = None,
-    ) -> AsyncIterator[dict]:
-        from google.genai import types as genai_types
-
-        client = self._get_gemini_client()
-        contents = self._build_gemini_contents(messages, files)
-
-        config_kwargs: dict = {
-            "tools": [genai_types.Tool(code_execution=genai_types.ToolCodeExecution())],
-        }
-        if system_prompt:
-            config_kwargs["system_instruction"] = system_prompt
-
-        generate_config = genai_types.GenerateContentConfig(**config_kwargs)
-
-        # Le SDK google-genai expose generate_content_stream de façon synchrone itérable
-        # On l'exécute dans un thread pour ne pas bloquer la boucle asyncio
-        import asyncio
-        loop = asyncio.get_event_loop()
-
-        def _sync_stream():
-            return client.models.generate_content_stream(
-                model=model_id,
-                contents=contents,
-                config=generate_config,
-            )
-
-        stream = await loop.run_in_executor(None, _sync_stream)
-
-        def _iter_stream():
-            for chunk in stream:
-                if not chunk.candidates:
-                    continue
-                for part in chunk.candidates[0].content.parts:
-                    yield part
-
-        parts_iter = await loop.run_in_executor(None, lambda: list(_iter_stream()))
-
-        for part in parts_iter:
-            if part.thought:
-                continue
-            if part.inline_data is not None:
-                yield {
-                    "type": "file_data",
-                    "data": bytes(part.inline_data.data),
-                    "mime_type": part.inline_data.mime_type,
-                }
-            elif part.text is not None:
-                yield {"type": "text", "text": part.text}
-            elif part.executable_code is not None:
-                yield {"type": "code", "code": part.executable_code.code}
-            elif part.code_execution_result is not None:
-                yield {
-                    "type": "code_result",
-                    "output": part.code_execution_result.output,
-                }
-
-    # ── Chemin Claude natif (create_file tool) ───────────────────────────
-
-    async def _stream_claude_create_file(
-        self,
-        model_id: str,
-        messages: list[dict],
-        system_prompt: str = "",
-        files: Optional[list[dict]] = None,
-    ) -> AsyncIterator[dict]:
-        import anthropic
-
-        client = self._get_anthropic_client()
-        actual_model = _ANTHROPIC_MODELS.get(model_id, model_id)
-
-        # Convertir les messages : "model" → "assistant"
-        anthropic_messages = []
-        for msg in messages:
-            role = msg.get("role", "user")
-            if role == "model":
-                role = "assistant"
-            anthropic_messages.append({"role": role, "content": msg.get("content", "")})
-
-        stream_kwargs: dict = {
-            "model": actual_model,
-            "max_tokens": 8192,
-            "tools": [_CLAUDE_CREATE_FILE_TOOL],
-            "messages": anthropic_messages,
-        }
-        if system_prompt:
-            stream_kwargs["system"] = system_prompt
-
-        async with client.messages.stream(**stream_kwargs) as stream:
-            async for text_delta in stream.text_stream:
-                yield {"type": "text", "text": text_delta}
-
-            final_message = await stream.get_final_message()
-
-        # Chercher un appel d'outil create_file dans la réponse finale
-        for block in final_message.content:
-            if (
-                hasattr(block, "type")
-                and block.type == "tool_use"
-                and block.name == "create_file"
-            ):
-                yield {"type": "tool_create_file", "tool_input": block.input}
-
-    # ── Streaming principal ───────────────────────────────────────────────
+    # ── Streaming texte pur ───────────────────────────────────────────────
 
     async def stream_chat(
         self,
@@ -326,62 +385,103 @@ class LLMManager:
         messages: list[dict],
         system_prompt: str = "",
         files: Optional[list[dict]] = None,
-        enable_code_execution: bool = False,
+        effort: str = "medium",
+        enable_search: bool = False,
     ) -> AsyncIterator[dict]:
         """
-        Async generator — yield des dicts d'événements :
-          {"type": "text",             "text": str}
-          {"type": "code",             "code": str}
-          {"type": "code_result",      "output": str}
-          {"type": "file_data",        "data": bytes, "mime_type": str}
-          {"type": "tool_create_file", "tool_input": dict}
+        Streaming texte pur, sans outils.
+        Utilisé pour le chat normal (sans génération de fichier).
+        Yield : {"type": "text", "text": str}
         """
         self._check_provider_model(provider, model_id)
 
-        if enable_code_execution and provider == "gemini":
-            try:
-                events = []
-                async for event in self._stream_gemini_code_exec(
-                    model_id=model_id,
-                    messages=messages,
-                    system_prompt=system_prompt,
-                    files=files,
-                ):
-                    events.append(event)
-                for event in events:
-                    yield event
-                return
-            except Exception:
-                # SDK natif indisponible (clé API) → chemin LiteLLM
-                pass
-
-        if enable_code_execution and provider == "claude":
-            async for event in self._stream_claude_create_file(
-                model_id=model_id,
-                messages=messages,
-                system_prompt=system_prompt,
-                files=files,
-            ):
-                yield event
-            return
-
-        # Chemin par défaut : LiteLLM + OpenRouter
         litellm_messages = self._build_messages(messages, system_prompt, files)
 
-        response = await litellm.acompletion(
-            model=_or_model(model_id),
-            messages=litellm_messages,
-            stream=True,
-            api_key=settings.OPENROUTER_API_KEY,
-            extra_headers=_OR_HEADERS,
-        )
+        max_tokens = _max_tokens(model_id)
+        logger.debug("LLM stream_chat model=%s provider=%s max_tokens=%d", model_id, provider, max_tokens)
+        kwargs = {
+            "model": _or_model(model_id),
+            "messages": litellm_messages,
+            "stream": True,
+            "temperature": _OR_TEMPERATURE.get(effort, 0.5),
+            "max_tokens": max_tokens,
+            "api_key": settings.OPENROUTER_API_KEY,
+            "extra_headers": _OR_HEADERS,
+            "timeout": 60,
+        }
+        response = await _completion_with_fallback(kwargs)
 
         async for chunk in response:
             delta = chunk.choices[0].delta
             if delta and delta.content:
                 yield {"type": "text", "text": delta.content}
 
-    # ── Non-streaming ────────────────────────────────────────────────────
+    # ── Non-streaming avec outils ────────────────────────────────────────
+
+    async def call_with_tools(
+        self,
+        provider: str,
+        model_id: str,
+        messages: list[dict],
+        system_prompt: str = "",
+        files: Optional[list[dict]] = None,
+        tools: Optional[list[dict]] = None,
+        effort: str = "medium",
+        tool_choice: str | dict = "auto",
+    ) -> dict:
+        """
+        Appel non-streaming avec outils.
+        Utilisé pour la génération de fichiers.
+
+        Retourne :
+          {
+            "text": str,               # Réponse textuelle du LLM
+            "tool_call": dict | None,  # {"name": str, "arguments": dict} si outil appelé
+          }
+        """
+        self._check_provider_model(provider, model_id)
+
+        litellm_messages = self._build_messages(messages, system_prompt, files)
+
+        max_tokens = _max_tokens(model_id)
+        logger.debug("LLM call_with_tools model=%s provider=%s max_tokens=%d", model_id, provider, max_tokens)
+        kwargs: dict = {
+            "model": _or_model(model_id),
+            "messages": litellm_messages,
+            "stream": False,
+            "temperature": _OR_TEMPERATURE.get(effort, 0.5),
+            "max_tokens": max_tokens,
+            "api_key": settings.OPENROUTER_API_KEY,
+            "extra_headers": _OR_HEADERS,
+            "timeout": 60,  # 60s max — évite un blocage indéfini
+        }
+
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = tool_choice
+
+        response = await _completion_with_fallback(kwargs)
+        msg = response.choices[0].message
+
+        text = msg.content or ""
+        tool_call: dict | None = None
+
+        if hasattr(msg, "tool_calls") and msg.tool_calls:
+            tc = msg.tool_calls[0]
+            try:
+                raw_args = tc.function.arguments
+                # arguments peut être une string JSON ou déjà un dict
+                arguments = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+            except (json.JSONDecodeError, Exception):
+                arguments = {}
+            tool_call = {
+                "name": tc.function.name,
+                "arguments": arguments,
+            }
+
+        return {"text": text, "tool_call": tool_call}
+
+    # ── Non-streaming texte ──────────────────────────────────────────────
 
     async def generate_text(
         self,
@@ -389,10 +489,12 @@ class LLMManager:
         model_id: str,
         prompt: str,
         system_prompt: str = "",
+        max_tokens: int = 512,
+        log_finish_reason: bool = False,
     ) -> str:
         """
-        Appel non-streaming — retourne le texte complet.
-        Utilisé pour la génération de titres, les résumés d'historique, etc.
+        Appel non-streaming sans outils.
+        Utilisé pour titres, résumés, routage.
         """
         self._check_provider_model(provider, model_id)
 
@@ -401,15 +503,35 @@ class LLMManager:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        response = await litellm.acompletion(
-            model=_or_model(model_id),
-            messages=messages,
-            api_key=settings.OPENROUTER_API_KEY,
-            extra_headers=_OR_HEADERS,
-        )
+        kwargs = {
+            "model": _or_model(model_id),
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "api_key": settings.OPENROUTER_API_KEY,
+            "extra_headers": _OR_HEADERS,
+            "timeout": 60,
+        }
+        response = await _completion_with_fallback(kwargs)
+
+        finish_reason = getattr(response.choices[0], "finish_reason", None)
+        if log_finish_reason and finish_reason:
+            logger.info(
+                "LLM generate_text finish_reason=%s model=%s provider=%s max_tokens=%s",
+                finish_reason,
+                model_id,
+                provider,
+                max_tokens,
+            )
+            if finish_reason == "length":
+                logger.warning(
+                    "Code tronqué — max_tokens insuffisant for model=%s provider=%s max_tokens=%s",
+                    model_id,
+                    provider,
+                    max_tokens,
+                )
 
         return response.choices[0].message.content or ""
 
 
-# Singleton — partagé par tous les handlers
+# Singleton
 llm_manager = LLMManager()

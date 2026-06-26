@@ -9,12 +9,33 @@ import { streamChat, type RoutingInfo } from "@/lib/stream";
 import { useDocStore } from "@/store/docStore";
 import { useSubscriptionStore } from "@/store/subscriptionStore";
 import { useToastStore } from "@/store/toastStore";
-import type { Conversation, Message, LLM } from "@/types";
+import type { Conversation, Message, LLM, EffortLevel } from "@/types";
 
 const LONG_RESPONSE_WORDS = 500;
 
 function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+// ── Cookie model persistence ──────────────────────────────────────────────────
+
+function getModelFromCookie(): { provider: string; model: string } | null {
+  if (typeof document === "undefined") return null;
+  const entry = document.cookie.split(";").map((c) => c.trim()).find((c) => c.startsWith("boulga_model="));
+  if (!entry) return null;
+  const val = entry.slice("boulga_model=".length);
+  const sep = val.indexOf(":");
+  if (sep < 1) return null;
+  const provider = val.slice(0, sep);
+  const model = val.slice(sep + 1);
+  if (!provider || !model) return null;
+  return { provider, model };
+}
+
+function setModelCookie(provider: string, model: string) {
+  if (typeof document === "undefined") return;
+  const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toUTCString();
+  document.cookie = `boulga_model=${provider}:${model};expires=${expires};path=/;SameSite=Strict`;
 }
 
 // ── Types internes ────────────────────────────────────────────────────────────
@@ -37,9 +58,19 @@ interface ChatState {
   isStreaming: boolean;
   streamingText: string;
 
+  // Génération de fichier (progression)
+  isBuilding: boolean;
+  buildingLogs: string[];
+
   // Routage Automatique
   autoRoute: boolean;
   routingInfo: RoutingInfo | null;
+
+  // Niveau d'effort
+  effort: EffortLevel;
+
+  // Recherche web
+  enableSearch: boolean;
 
   // AbortController courant (non exposé directement)
   _abortController: AbortController | null;
@@ -60,9 +91,13 @@ interface ChatActions {
   selectModel: (model: string) => void;
   toggleAutoRoute: () => void;
   clearRoutingInfo: () => void;
+  setEffort: (e: EffortLevel) => void;
+  toggleSearch: () => void;
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
+
+const _savedModel = getModelFromCookie();
 
 export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
   // État initial
@@ -70,12 +105,16 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
   currentConversationId: null,
   messages: [],
   llms: [],
-  selectedProvider: "gemini",
-  selectedModel: "gemini-2.5-flash",
+  selectedProvider: _savedModel?.provider ?? "gemini",
+  selectedModel:    _savedModel?.model    ?? "gemini-2.5-flash",
   isStreaming: false,
   streamingText: "",
+  isBuilding: false,
+  buildingLogs: [],
   autoRoute: false,
   routingInfo: null,
+  effort: "medium",
+  enableSearch: false,
   _abortController: null,
 
   // ── Actions ──────────────────────────────────────────────────────────
@@ -99,11 +138,87 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
   },
 
   loadConversation: async (id: string) => {
+    // Interrompre tout streaming en cours (changement de conversation pendant génération)
+    const { _abortController } = get();
+    if (_abortController) {
+      _abortController.abort();
+    }
+    set({
+      isStreaming: false,
+      streamingText: "",
+      isBuilding: false,
+      buildingLogs: [],
+      _abortController: null,
+    });
+
     try {
       const detail = await getConversation(id);
+      const msgs = detail.messages;
+
+      // 1. Restaurer le dernier provider/model utilisé dans cette conversation
+      let lastProvider = get().selectedProvider;
+      let lastModel = get().selectedModel;
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        const m = msgs[i];
+        if (m.role === "assistant" && m.provider && m.model_id) {
+          lastProvider = m.provider;
+          lastModel = m.model_id;
+          break;
+        }
+      }
+
+      // 2. Reconstruire fileReady depuis les tags <!--boulga-file:{...}--> embarqués en DB
+      //    et appliquer le préfixe /backend aux URLs /api/ (identique à onFileReady)
+      // Le JSON embarqué dans le tag est compact (json.dumps sans indent) — pas de /s nécessaire
+      const FILE_TAG_RE = /<!--boulga-file:(\{.*?\})-->/;
+      const parsedMsgs = msgs.map((msg) => {
+        if (msg.role !== "assistant" || !msg.content) return msg;
+        const match = FILE_TAG_RE.exec(msg.content);
+        if (!match) return msg;
+        try {
+          const fileData = JSON.parse(match[1]);
+          const cleanContent = msg.content.replace(FILE_TAG_RE, "").trimEnd();
+          const rawUrl = (fileData.url as string) ?? "";
+          const url = rawUrl.startsWith("/api/") ? `/backend${rawUrl}` : rawUrl;
+          return {
+            ...msg,
+            content: cleanContent,
+            fileReady: {
+              url,
+              name:     (fileData.name    as string) ?? "",
+              size:     (fileData.size    as number) ?? 0,
+              mimeType: fileData.mimeType as string | undefined,
+              summary:  fileData.summary  as string | undefined,
+            },
+          };
+        } catch {
+          return msg;
+        }
+      });
+
+      // 3. Ajouter les fichiers restaurés au docStore (pour que le bouton "Ouvrir" fonctionne)
+      const docState = useDocStore.getState();
+      for (const msg of parsedMsgs) {
+        if (!msg.fileReady) continue;
+        const { url, name, size, mimeType } = msg.fileReady;
+        // Éviter les doublons si la conversation est rechargée plusieurs fois
+        if (!docState.artifacts.some((a) => a.url === url)) {
+          docState.addArtifact({
+            id: `artifact-restored-${name}-${size}`,
+            name,
+            url,
+            mimeType: mimeType ?? "application/octet-stream",
+            size,
+            createdAt: Date.now(),
+          });
+        }
+      }
+
       set({
         currentConversationId: id,
-        messages: detail.messages,
+        messages: parsedMsgs as typeof msgs,
+        selectedProvider: lastProvider,
+        selectedModel: lastModel,
       });
     } catch {
       // erreur silencieuse
@@ -117,6 +232,8 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
       selectedModel,
       isStreaming,
       autoRoute,
+      effort,
+      enableSearch,
     } = get();
 
     if (isStreaming) return;
@@ -163,6 +280,8 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
         conversation_id: currentConversationId,
         file_ids: fileIds,
         auto_route: autoRoute,
+        effort,
+        enable_search: enableSearch,
       },
       {
         onConversation: (id, isNew) => {
@@ -197,7 +316,34 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
           }));
         },
 
-        onFileReady: (url, name, mimeType, sizeBytes, isImage) => {
+        onImageNotSupported: (_provider, message) => {
+          useToastStore.getState().addToast({
+            type:    "info",
+            title:   "Génération d'images non disponible",
+            message,
+          });
+        },
+
+        onFileBuildingStep: (step: string) => {
+          set((s) => ({
+            isBuilding: true,
+            buildingLogs: [...s.buildingLogs, step],
+          }));
+        },
+
+        onFileGenerationError: (message) => {
+          set({ isBuilding: false, buildingLogs: [] });
+          useToastStore.getState().addToast({
+            type:    "warning",
+            title:   "Fichier non généré",
+            message,
+          });
+        },
+
+        onFileReady: (url, name, mimeType, sizeBytes, isImage, summary) => {
+          // Fin de la construction — reset building state
+          set({ isBuilding: false, buildingLogs: [] });
+
           // URL directe (Supabase signée) ou fallback proxy backend
           const fullUrl = url.startsWith("/api/") ? `/backend${url}` : url;
 
@@ -237,7 +383,7 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
             const messages = [...s.messages];
             for (let i = messages.length - 1; i >= 0; i--) {
               if (messages[i].role === "assistant") {
-                messages[i] = { ...messages[i], fileReady: { url: fullUrl, name, size: sizeBytes, mimeType } };
+                messages[i] = { ...messages[i], fileReady: { url: fullUrl, name, size: sizeBytes, mimeType, summary } };
                 break;
               }
             }
@@ -252,7 +398,10 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
         },
 
         onDone: (messageId) => {
-          const finalText = get().streamingText;
+          // Filet de sécurité : supprimer tout tag <!--boulga-file:--> que le LLM
+          // aurait pu générer (ne devrait plus arriver après le fix backend)
+          const FILE_TAG_RE = /<!--boulga-file:\{.*?\}-->/g;
+          const finalText = get().streamingText.replace(FILE_TAG_RE, "").trimEnd();
           set((s) => ({
             messages: s.messages.map((m) =>
               m.id === optimisticAssistantId
@@ -261,16 +410,23 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
             ),
             isStreaming: false,
             streamingText: "",
+            isBuilding: false,
+            buildingLogs: [],
             _abortController: null,
           }));
 
-          // Ouvrir le panneau document si la réponse est longue
+          // Ouvrir le panneau document si la réponse est longue,
+          // MAIS seulement si aucun artifact n'a été généré dans ce message
+          // (l'artifact ouvre déjà le panel, on ne veut pas l'écraser)
           if (countWords(finalText) > LONG_RESPONSE_WORDS) {
-            const doc = useDocStore.getState().currentDocument;
-            if (doc) {
-              useDocStore.getState().updateDocument(finalText);
-            } else {
-              useDocStore.getState().openDocument(finalText);
+            const docState = useDocStore.getState();
+            if (docState.currentArtifactIndex === null) {
+              const doc = docState.currentDocument;
+              if (doc) {
+                docState.updateDocument(finalText);
+              } else {
+                docState.openDocument(finalText);
+              }
             }
           }
 
@@ -283,10 +439,12 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
         onError: (message) => {
           set((s) => ({
             messages: s.messages.filter(
-              (m) => m.id !== optimisticAssistantId,
+              (m) => m.id !== optimisticAssistantId && m.id !== optimisticUserId,
             ),
             isStreaming: false,
             streamingText: "",
+            isBuilding: false,
+            buildingLogs: [],
             _abortController: null,
           }));
 
@@ -294,12 +452,21 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
           if (message === "quota_exceeded") {
             useSubscriptionStore.getState().setShowQuotaModal(true);
           }
-          // Modèle non accessible → toast explicatif
+          // Modèle / provider non accessible
           if (message === "model_access_denied") {
             useToastStore.getState().addToast({
               type: "info",
-              title: "Plan requis",
-              message: "Ce modèle n'est pas disponible sur votre abonnement actuel.",
+              title: "Provider non disponible",
+              message: "Ce modèle n'est pas encore disponible. Seul Gemini est actif pour le moment.",
+            });
+          }
+          // Quota fichiers épuisé → toast avec lien vers /pricing
+          if (message === "file_quota_exceeded") {
+            useToastStore.getState().addToast({
+              type: "warning",
+              title: "Limite de fichiers atteinte",
+              message: "Vous avez atteint votre quota de génération de fichiers. Passez à un plan supérieur pour continuer.",
+              action: { label: "Voir les offres", href: "/pricing" },
             });
           }
         },
@@ -427,9 +594,17 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
     }
   },
 
-  selectProvider: (provider: string) => set({ selectedProvider: provider }),
-  selectModel: (model: string) => set({ selectedModel: model }),
+  selectProvider: (provider: string) => {
+    setModelCookie(provider, get().selectedModel);
+    set({ selectedProvider: provider });
+  },
+  selectModel: (model: string) => {
+    setModelCookie(get().selectedProvider, model);
+    set({ selectedModel: model });
+  },
 
   toggleAutoRoute: () => set((s) => ({ autoRoute: !s.autoRoute })),
   clearRoutingInfo: () => set({ routingInfo: null }),
+  setEffort: (e: EffortLevel) => set({ effort: e }),
+  toggleSearch: () => set((s) => ({ enableSearch: !s.enableSearch })),
 }));

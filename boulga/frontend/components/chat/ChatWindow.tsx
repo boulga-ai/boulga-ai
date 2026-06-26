@@ -34,13 +34,15 @@ export default function ChatWindow() {
   const messages = useChatStore((s) => s.messages);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const streamingText = useChatStore((s) => s.streamingText);
+  const isBuilding = useChatStore((s) => s.isBuilding);
+  const buildingLogs = useChatStore((s) => s.buildingLogs);
 
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll à chaque chunk et à chaque nouveau message
+  // Auto-scroll à chaque chunk et à chaque nouveau log de construction
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [streamingText, messages.length]);
+  }, [streamingText, messages.length, buildingLogs.length]);
 
   if (messages.length === 0 && !isStreaming) {
     return (
@@ -67,6 +69,8 @@ export default function ChatWindow() {
               message={message}
               isStreaming={isThisStreaming}
               streamingText={isThisStreaming ? streamingText : undefined}
+              isBuilding={isThisStreaming ? isBuilding : false}
+              buildingLogs={isThisStreaming ? buildingLogs : undefined}
             />
           );
         })}

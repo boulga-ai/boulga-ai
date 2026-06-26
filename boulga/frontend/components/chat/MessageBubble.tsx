@@ -1,9 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
 import type { Components } from "react-markdown";
 import {
   IconPaperclip, IconFileText, IconFileSpreadsheet,
@@ -37,6 +36,7 @@ function providerLabel(provider?: string, modelId?: string): string {
     "gemini-2.5-pro": "2.5 Pro",
     "claude-haiku-4-5": "Haiku 4.5",
     "claude-sonnet-4-6": "Sonnet 4.6",
+    "claude-opus-4-6": "Opus 4.6",
     "gpt-5.5-instant": "5.5 Instant",
     "gpt-5.5-pro": "5.5 Pro",
     "deepseek-v4-flash": "V4 Flash",
@@ -55,6 +55,41 @@ function ThinkingIndicator() {
       <span className="thinking-dot" />
       <span className="thinking-dot" />
       <span className="thinking-dot" />
+    </div>
+  );
+}
+
+// ── FileBuildingPanel ─────────────────────────────────────────────────────────
+
+function FileBuildingPanel({ logs }: { logs: string[] }) {
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs.length]);
+
+  return (
+    <div
+      className="mt-3 rounded-xl border bg-neutral-50 px-3 py-2.5"
+      style={{ borderColor: "#E0E4EC" }}
+    >
+      {/* En-tête spinner */}
+      <div className="flex items-center gap-2 mb-1.5">
+        <div className="w-3 h-3 rounded-full border-2 border-blue-600 border-t-transparent animate-spin flex-shrink-0" />
+        <span className="text-[12px] font-medium text-neutral-500">Génération du fichier en cours…</span>
+      </div>
+
+      {/* Logs */}
+      {logs.length > 0 && (
+        <div className="max-h-28 overflow-y-auto space-y-0.5 pl-5">
+          {logs.map((log, i) => (
+            <p key={i} className="text-[11px] font-mono text-neutral-400 leading-relaxed">
+              {log}
+            </p>
+          ))}
+          <div ref={endRef} />
+        </div>
+      )}
     </div>
   );
 }
@@ -128,6 +163,9 @@ function ArtifactCard({ fileReady }: { fileReady: NonNullable<Message["fileReady
       <div className="flex-1 min-w-0">
         <p className="text-[13px] font-medium text-neutral-900 truncate">{fileReady.name}</p>
         <p className="text-[11px] text-neutral-400">{label} · {formatBytes(fileReady.size)}</p>
+        {fileReady.summary && (
+          <p className="text-[11px] text-neutral-400 mt-0.5 truncate">{fileReady.summary}</p>
+        )}
       </div>
 
       {/* Actions */}
@@ -157,6 +195,8 @@ interface MessageBubbleProps {
   message: Message;
   isStreaming?: boolean;
   streamingText?: string;
+  isBuilding?: boolean;
+  buildingLogs?: string[];
   attachments?: Array<{ id: string; name: string; size: number; mime_type: string }>;
 }
 
@@ -166,6 +206,8 @@ export default function MessageBubble({
   message,
   isStreaming = false,
   streamingText = "",
+  isBuilding = false,
+  buildingLogs = [],
   attachments = [],
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
@@ -351,7 +393,7 @@ export default function MessageBubble({
   }
 
   // ── Bulle ASSISTANT ────────────────────────────────────────────────────────
-  const isThinking = isStreaming && !streamingText;
+  const isThinking = isStreaming && !streamingText && !isBuilding;
 
   return (
     <>
@@ -379,28 +421,31 @@ export default function MessageBubble({
             {isThinking ? (
               <ThinkingIndicator />
             ) : content ? (
-              <div className={`prose-chat${isStreaming ? " streaming-cursor" : ""}`}>
+              <div className={`prose-chat${(isStreaming && !isBuilding) ? " streaming-cursor" : ""}`}>
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeHighlight]}
                   components={markdownComponents}
                 >
                   {content}
                 </ReactMarkdown>
               </div>
-            ) : (
-              /* Bulle finalisée mais vide (ne devrait pas arriver) */
+            ) : !isBuilding && !message.fileReady ? (
               <span className="text-neutral-text-tertiary text-[13px]">—</span>
+            ) : null}
+
+            {/* Panneau de progression génération fichier */}
+            {isBuilding && (
+              <FileBuildingPanel logs={buildingLogs} />
             )}
 
-            {/* Artifact card — fichier ou image générée */}
-            {!isStreaming && message.fileReady && (
+            {/* Artifact card — visible dès file_ready, même pendant le streaming */}
+            {message.fileReady && (
               <ArtifactCard fileReady={message.fileReady} />
             )}
           </div>
 
           {/* Actions (hover desktop / visible si réponse complète) */}
-          {!isStreaming && message.content && (
+          {!isStreaming && (message.content || message.fileReady) && (
             <BubbleActions message={message} />
           )}
         </div>

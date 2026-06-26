@@ -1,10 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { IconChevronDown, IconSparkles, IconX } from "@tabler/icons-react";
+import { IconChevronDown, IconChevronRight, IconSparkles, IconX } from "@tabler/icons-react";
 import { useChatStore } from "@/store/chatStore";
 import { useSubscriptionStore } from "@/store/subscriptionStore";
-import type { LLM, Model } from "@/types";
+import type { EffortLevel, LLM, Model, Tier } from "@/types";
+
+const EFFORT_OPTIONS: { value: EffortLevel; label: string; hint: string }[] = [
+  { value: "low",    label: "Faible",  hint: "Rapide et concis" },
+  { value: "medium", label: "Moyen",   hint: "Équilibré — par défaut" },
+  { value: "high",   label: "Élevé",   hint: "Analyse approfondie" },
+  { value: "max",    label: "Max",     hint: "Raisonnement étendu" },
+];
 
 // ── Données statiques de support ──────────────────────────────────────────────
 
@@ -20,18 +27,21 @@ const MODEL_DESCRIPTIONS: Record<string, string> = {
   "gemini-2.5-pro": "Raisonnement avancé, contexte long",
   "claude-haiku-4-5": "Réponses concises et rapides",
   "claude-sonnet-4-6": "Analyse, code, rédaction avancée",
+  "claude-opus-4-6": "Le plus puissant — agents, raisonnement complexe",
   "gpt-5.5-instant": "Créativité et génération rapide",
   "gpt-5.5-pro": "Rédaction professionnelle avancée",
   "deepseek-v4-flash": "Code et logique, ultra-efficace",
   "deepseek-v4-pro": "Développement complexe et debug",
 };
 
+const _STANDARD = ["gemini-2.5-flash", "gemini-2.5-pro", "claude-haiku-4-5", "claude-sonnet-4-6", "gpt-5.5-instant", "gpt-5.5-pro", "deepseek-v4-flash", "deepseek-v4-pro"];
+
 const TIER_MODELS: Record<string, string[]> = {
-  free: ["gemini-2.5-flash"],
+  free:   ["gemini-2.5-flash"],
   goutte: ["gemini-2.5-flash", "deepseek-v4-flash"],
-  source: ["gemini-2.5-flash", "gemini-2.5-pro", "claude-haiku-4-5", "claude-sonnet-4-6", "gpt-5.5-instant", "gpt-5.5-pro", "deepseek-v4-flash", "deepseek-v4-pro"],
-  fleuve: ["gemini-2.5-flash", "gemini-2.5-pro", "claude-haiku-4-5", "claude-sonnet-4-6", "gpt-5.5-instant", "gpt-5.5-pro", "deepseek-v4-flash", "deepseek-v4-pro"],
-  ocean: ["gemini-2.5-flash", "gemini-2.5-pro", "claude-haiku-4-5", "claude-sonnet-4-6", "gpt-5.5-instant", "gpt-5.5-pro", "deepseek-v4-flash", "deepseek-v4-pro"],
+  source: _STANDARD,
+  fleuve: _STANDARD,
+  ocean:  [..._STANDARD, "claude-opus-4-6"],
 };
 
 // ── Hook ───────────────────────────────────────────────────────────────────────
@@ -58,14 +68,17 @@ export default function LLMSelector() {
   const selectProvider = useChatStore((s) => s.selectProvider);
   const selectModel = useChatStore((s) => s.selectModel);
   const loadLLMs = useChatStore((s) => s.loadLLMs);
+  const effort = useChatStore((s) => s.effort);
+  const setEffort = useChatStore((s) => s.setEffort);
 
-  const userTier = useSubscriptionStore((s) => s.tier);
+  const userTier = useSubscriptionStore((s) => s.tier) as Tier;
   const accessibleModels = TIER_MODELS[userTier] ?? TIER_MODELS.free;
   const setShowUpgradeModal = useSubscriptionStore((s) => s.setShowUpgradeModal);
 
   // Desktop dropdown state
   const [providerOpen, setProviderOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
+  const [effortSubmenuOpen, setEffortSubmenuOpen] = useState(false);
 
   // Mobile bottom sheet state
   const [sheet, setSheet] = useState<SheetType>(null);
@@ -74,7 +87,7 @@ export default function LLMSelector() {
   const modelRef = useRef<HTMLDivElement>(null);
 
   useOutsideClick(providerRef, () => setProviderOpen(false));
-  useOutsideClick(modelRef, () => setModelOpen(false));
+  useOutsideClick(modelRef, () => { setModelOpen(false); setEffortSubmenuOpen(false); });
 
   useEffect(() => {
     loadLLMs();
@@ -232,7 +245,8 @@ export default function LLMSelector() {
 
             {/* Desktop dropdown */}
             {modelOpen && (
-              <div className="hidden md:block absolute top-full left-0 mt-1 w-72 bg-neutral-white border border-neutral-border rounded-md shadow-lg z-20 overflow-hidden">
+              <div className="hidden md:block absolute top-full left-0 mt-1 w-72 bg-neutral-white border border-neutral-border rounded-xl shadow-lg z-20 overflow-hidden">
+                {/* Liste des modèles */}
                 {currentLLM.models.map((model) => {
                   const accessible = accessibleModels.includes(model.id);
                   const isSelected = model.id === selectedModel;
@@ -241,7 +255,7 @@ export default function LLMSelector() {
                       key={model.id}
                       onClick={() => handleModelSelect(model)}
                       disabled={!accessible}
-                      className={`w-full flex items-start justify-between gap-3 px-3 py-3 text-left transition-colors duration-100 border-b border-neutral-border last:border-0 ${
+                      className={`w-full flex items-start justify-between gap-3 px-3 py-2.5 text-left transition-colors duration-100 border-b border-neutral-border last:border-0 ${
                         accessible
                           ? isSelected
                             ? "bg-blue-50"
@@ -276,6 +290,59 @@ export default function LLMSelector() {
                     </button>
                   );
                 })}
+
+                {/* Séparateur + sous-menu Effort */}
+                <div className="border-t border-neutral-border">
+                  <button
+                    onClick={() => setEffortSubmenuOpen((o) => !o)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-neutral-bg transition-colors duration-100"
+                  >
+                    <span className="text-uism font-body text-neutral-text-secondary">Effort</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[12px] font-body font-medium text-marine">
+                        {EFFORT_OPTIONS.find((o) => o.value === effort)?.label}
+                      </span>
+                      <IconChevronRight
+                        size={13}
+                        className={`text-neutral-text-tertiary transition-transform duration-150 ${effortSubmenuOpen ? "rotate-90" : ""}`}
+                      />
+                    </div>
+                  </button>
+
+                  {effortSubmenuOpen && (
+                    <div className="border-t border-neutral-border/50 bg-neutral-bg/50">
+                      {EFFORT_OPTIONS.map(({ value, label, hint }) => {
+                        const isSelected = effort === value;
+                        const isDisabled = value === "max" && userTier === "free";
+                        return (
+                          <button
+                            key={value}
+                            onClick={() => {
+                              if (!isDisabled) {
+                                setEffort(value);
+                                setEffortSubmenuOpen(false);
+                                setModelOpen(false);
+                              }
+                            }}
+                            disabled={isDisabled}
+                            className={`w-full flex items-center justify-between px-4 py-2 text-left transition-colors duration-100
+                              ${isDisabled ? "opacity-40 cursor-not-allowed" : isSelected ? "bg-blue-50" : "hover:bg-neutral-bg"}`}
+                          >
+                            <div>
+                              <span className={`text-[12px] font-body font-medium ${isSelected ? "text-blue-700" : "text-marine"}`}>
+                                {label}
+                              </span>
+                              <p className="text-[10px] font-body text-neutral-text-tertiary">{hint}</p>
+                            </div>
+                            {isSelected && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-700 flex-shrink-0" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

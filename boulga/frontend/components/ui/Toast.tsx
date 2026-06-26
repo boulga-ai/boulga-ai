@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { IconX } from "@tabler/icons-react";
 import { useToastStore, type ToastType, type ToastItem } from "@/store/toastStore";
 
@@ -67,6 +68,14 @@ function ToastItem({
             <p className="text-caption font-body text-neutral-text-secondary mt-1">
               {toast.message}
             </p>
+          )}
+          {toast.action && (
+            <Link
+              href={toast.action.href}
+              className="inline-block mt-2 text-caption font-body font-medium text-blue-700 hover:underline"
+            >
+              {toast.action.label} →
+            </Link>
           )}
         </div>
         <button

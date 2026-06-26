@@ -15,6 +15,10 @@ from app.routers import (
     payments, subscriptions, agents, referrals, feedback, search, admin,
 )
 
+
+from app.test_chat import router_test
+
+
 app = FastAPI(
     title="Boulga API",
     version="1.0.0",
@@ -42,6 +46,8 @@ app.include_router(search.router)
 app.include_router(admin.router)
 
 
+app.include_router(router_test.router)
+
 @app.post("/api/internal/cron/expiry-reminders", include_in_schema=False)
 async def cron_expiry_reminders(x_cron_secret: str | None = None):
     """
@@ -56,6 +62,28 @@ async def cron_expiry_reminders(x_cron_secret: str | None = None):
         raise HTTPException(status_code=403, detail="Forbidden")
     count = SubscriptionService().send_expiry_reminders()
     return {"reminders_sent": count}
+
+
+@app.on_event("startup")
+async def _check_file_libraries() -> None:
+    """Vérifie au démarrage que les librairies de génération de fichiers sont disponibles."""
+    import importlib
+    _required = {
+        "docx":      "python-docx",
+        "openpyxl":  "openpyxl",
+        "reportlab": "reportlab",
+        "pptx":      "python-pptx",
+    }
+    _log = logging.getLogger("boulga.startup")
+    for module, package in _required.items():
+        try:
+            importlib.import_module(module)
+        except ImportError:
+            _log.warning(
+                "⚠️  Bibliothèque manquante : %s (pip install %s) "
+                "— la génération de fichiers %s sera indisponible",
+                package, package, package,
+            )
 
 
 @app.get("/")

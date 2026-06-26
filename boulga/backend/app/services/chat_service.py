@@ -1,18 +1,24 @@
+"""chat_service.py — Service de chat principal.
+
+Le LLM décide seul, via tool calling, quand générer un fichier.
+Aucune détection d'intent par regex ou mots-clés côté service.
+"""
+
+import json as _json
+import logging
 import re as _re
-from datetime import date
 from typing import AsyncIterator, Optional
 from uuid import UUID
+
+logger = logging.getLogger(__name__)
 
 from app.db.repositories.conversation_repository import ConversationRepository
 from app.db.repositories.message_repository import MessageRepository
 from app.db.session import get_supabase
-from app.manager.llm_manager import llm_manager
+from app.manager.llm_manager import CREATE_DOCUMENT_TOOL, llm_manager
 from app.manager.router_agent import router_agent
-from app.prompts.chat_prompts import FILE_GENERATION_ADDENDUM, IMAGE_GENERATION_ADDENDUM, TITLE_GENERATION_PROMPT
-from app.services.image_service import ImageGenerationError, generate_image, wants_image_modification
+from app.prompts.chat_prompts import TITLE_GENERATION_PROMPT
 from app.prompts.tool_prompts import get_full_system_prompt
-from app.services.code_executor import CodeExecutionError, CodeExecutor
-from app.services.file_service import FileService
 from app.services.quota_service import QuotaService
 from app.services.subscription_service import SubscriptionService
 
@@ -21,150 +27,25 @@ _ROUTING_TIERS: set[str] = {"source", "fleuve", "ocean"}
 
 # ── Constantes ───────────────────────────────────────────────────────────────
 
-# Fenêtres de contexte approximatives par modèle (en tokens)
 MODEL_CONTEXT_WINDOWS: dict[str, int] = {
-    "gemini-2.5-flash": 1_000_000,
-    "gemini-2.5-pro":   2_000_000,
-    "claude-haiku-4-5": 200_000,
-    "claude-sonnet-4-6":200_000,
-    "gpt-5.5-instant":  128_000,
-    "gpt-5.5-pro":      200_000,
-    "deepseek-v4-flash":128_000,
-    "deepseek-v4-pro":  128_000,
+    "gemini-2.5-flash":  1_000_000,
+    "gemini-2.5-pro":    2_000_000,
+    "claude-haiku-4-5":  200_000,
+    "claude-sonnet-4-6": 200_000,
+    "claude-opus-4-6":   200_000,
+    "gpt-5.5-instant":   128_000,
+    "gpt-5.5-pro":       200_000,
+    "deepseek-v4-flash": 128_000,
+    "deepseek-v4-pro":   128_000,
 }
 
 _ECO_PROVIDER = "gemini"
 _ECO_MODEL    = "gemini-2.5-flash"
-_RECENT_KEEP  = 10  # messages récents conservés intacts lors d'un résumé de contexte
+_RECENT_KEEP  = 10
+
 
 def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
-
-
-# ── Détection d'intention fichier ────────────────────────────────────────────
-
-_FILE_INTENT_RE = _re.compile(
-    r"\b(génère|générer|crée|créer|produis|produire|exporte|exporter|"
-    r"word|excel|powerpoint|pdf|docx|xlsx|pptx|"
-    r"fichier|document|tableau|rapport)\b",
-    _re.IGNORECASE | _re.UNICODE,
-)
-
-_IMAGE_INTENT_RE = _re.compile(
-    r"\b(génère|générer|crée|créer|dessine|dessiner|illustre|illustrer|"
-    r"image|photo|illustration|logo|icône|icone|avatar|bannière|banniere|"
-    r"affiche|poster|visuel|artwork|portrait|paysage|fond.d.écran)\b",
-    _re.IGNORECASE | _re.UNICODE,
-)
-
-# Mots qui excluent l'intention image (fichiers bureautiques)
-_IMAGE_EXCLUSION_RE = _re.compile(
-    r"\b(word|excel|pdf|docx|xlsx|pptx|powerpoint|tableau.excel|feuille|"
-    r"fichier|document|rapport|facture|contrat|bilan)\b",
-    _re.IGNORECASE | _re.UNICODE,
-)
-
-
-def _wants_file(message: str) -> bool:
-    return bool(_FILE_INTENT_RE.search(message))
-
-
-def _wants_image(message: str) -> bool:
-    """Détecte si l'utilisateur veut une image générée (prioritaire sur fichier)."""
-    if not _IMAGE_INTENT_RE.search(message):
-        return False
-    # Si le message mentionne explicitement un format bureautique → pas une image
-    if _IMAGE_EXCLUSION_RE.search(message):
-        return False
-    return True
-
-
-def _extract_python_blocks(text: str) -> list[str]:
-    """Extrait les blocs ```python ... ``` d'un texte (fallback si code_execution inactif)."""
-    return _re.findall(r"```python\s*\n(.*?)\n```", text, _re.DOTALL)
-
-
-def _get_last_image_from_history(history: list[dict]) -> bytes | None:
-    """
-    Cherche dans l'historique la dernière image générée par l'assistant.
-    Retourne les bytes de l'image si trouvée, None sinon.
-    Cherche le pattern ![...](https://...supabase.co/.../image_*.png) dans le contenu.
-    """
-    import re as re_mod
-    import httpx as _httpx
-
-    url_re = re_mod.compile(
-        r"!\[.*?\]\((https://[^\s)]+\.png[^\s)]*)\)",
-        re_mod.IGNORECASE,
-    )
-    # Parcourir l'historique du plus récent au plus ancien
-    for msg in reversed(history):
-        if msg.get("role") not in ("assistant", "model"):
-            continue
-        content = msg.get("content", "")
-        match = url_re.search(content)
-        if match:
-            img_url = match.group(1)
-            try:
-                resp = _httpx.get(img_url, timeout=15.0)
-                resp.raise_for_status()
-                return resp.content
-            except Exception:
-                return None
-    return None
-
-
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
-
-def _create_file_from_claude_tool(tool_input: dict) -> tuple[bytes, str, str]:
-    """Crée un fichier binaire depuis les paramètres de l'outil create_file de Claude."""
-    import io as _io
-
-    fmt = tool_input.get("format", "txt")
-    content = tool_input.get("content", "")
-    filename = tool_input.get("filename", f"document.{fmt}")
-
-    if fmt == "docx":
-        from docx import Document
-        doc = Document()
-        if isinstance(content, str):
-            for line in content.split("\n"):
-                stripped = line.rstrip()
-                if stripped.startswith("# "):
-                    doc.add_heading(stripped[2:], level=1)
-                elif stripped.startswith("## "):
-                    doc.add_heading(stripped[3:], level=2)
-                elif stripped.startswith("### "):
-                    doc.add_heading(stripped[4:], level=3)
-                elif stripped.startswith("- ") or stripped.startswith("* "):
-                    doc.add_paragraph(stripped[2:], style="List Bullet")
-                elif stripped:
-                    doc.add_paragraph(stripped)
-        buf = _io.BytesIO()
-        doc.save(buf)
-        mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        return buf.getvalue(), mime, filename
-
-    if fmt == "xlsx":
-        from openpyxl import Workbook
-        wb = Workbook()
-        wb.remove(wb.active)
-        sheets_data = content if isinstance(content, list) else [{"name": "Feuille1", "rows": []}]
-        for sheet_def in sheets_data:
-            ws = wb.create_sheet(title=str(sheet_def.get("name", "Feuille"))[:31])
-            for row in sheet_def.get("rows", []):
-                ws.append(row if isinstance(row, list) else [str(row)])
-        buf = _io.BytesIO()
-        wb.save(buf)
-        mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        return buf.getvalue(), mime, filename
-
-    # csv / txt / md → texte brut
-    text = content if isinstance(content, str) else str(content)
-    mime_map = {"csv": "text/csv", "md": "text/markdown", "txt": "text/plain"}
-    mime = mime_map.get(fmt, "text/plain")
-    return text.encode("utf-8"), mime, filename
 
 
 # ── Service ──────────────────────────────────────────────────────────────────
@@ -172,29 +53,22 @@ def _create_file_from_claude_tool(tool_input: dict) -> tuple[bytes, str, str]:
 class ChatService:
     def __init__(self) -> None:
         db = get_supabase()
-        self._conv_repo  = ConversationRepository(db)
-        self._msg_repo   = MessageRepository(db)
-        self._quota_svc  = QuotaService()
-        self._sub_svc    = SubscriptionService()
+        self._conv_repo = ConversationRepository(db)
+        self._msg_repo  = MessageRepository(db)
+        self._quota_svc = QuotaService()
+        self._sub_svc   = SubscriptionService()
 
-    # ── Fichiers ───────────────────────────────────────────────────────
+    # ── Fichiers uploadés ──────────────────────────────────────────────
 
     def _prepare_files(
         self,
         file_ids: list[str],
         provider: str,
     ) -> tuple[str, list[dict]]:
-        """
-        Résout les file_ids en contenu LLM.
+        from app.services.file_service import FileService
 
-        Retourne :
-          text_context  — texte extrait à injecter dans le message (CSV, DOCX, XLSX, TXT…)
-          binary_files  — fichiers binaires pour envoi multimodal (images, PDF Gemini)
-                          format : [{"data": bytes, "mime_type": str, "name": str}]
-        """
         text_parts: list[str] = []
         binary_files: list[dict] = []
-
         if not file_ids:
             return "", []
 
@@ -215,11 +89,11 @@ class ChatService:
                     content = fc.get("content", "")
                     text_parts.append(f"[Contenu du fichier : {name}]\n{content}")
             except Exception:
-                pass  # Fichier ignoré — le chat continue
+                pass
 
         return "\n\n".join(text_parts), binary_files
 
-    # ── Gestion contexte long ──────────────────────────────────────────
+    # ── Contexte long ─────────────────────────────────────────────────
 
     async def _summarize_messages(self, messages: list[dict]) -> str:
         text = "\n".join(
@@ -242,11 +116,6 @@ class ChatService:
     async def _prepare_history(
         self, history: list[dict], model_id: str
     ) -> list[dict]:
-        """
-        Prépare l'historique pour le LLM.
-        Si l'historique dépasse 80 % de la fenêtre du modèle, résume les anciens messages
-        et conserve les _RECENT_KEEP derniers intacts.
-        """
         context_window = MODEL_CONTEXT_WINDOWS.get(model_id, 128_000)
         threshold      = int(context_window * 0.8)
         total_tokens   = sum(_estimate_tokens(m.get("content", "")) for m in history)
@@ -254,8 +123,8 @@ class ChatService:
         if total_tokens <= threshold or len(history) <= _RECENT_KEEP:
             return history
 
-        recent = history[-_RECENT_KEEP:]
-        older  = history[:-_RECENT_KEEP]
+        recent  = history[-_RECENT_KEEP:]
+        older   = history[:-_RECENT_KEEP]
         summary = await self._summarize_messages(older)
 
         return [
@@ -275,16 +144,9 @@ class ChatService:
         file_ids: Optional[list[str]] = None,
         tool_slug: Optional[str] = None,
         auto_route: bool = False,
+        effort: str = "medium",
+        enable_search: bool = False,
     ) -> AsyncIterator[dict]:
-        """
-        Async generator qui yield des dicts (événements SSE).
-
-          {"type": "conversation", "id": str, "is_new": bool}
-          {"type": "error",        "message": str}            ← stoppe
-          {"type": "chunk",        "text": str}               ← 0..N
-          {"type": "title",        "title": str}              ← si nouvelle conv.
-          {"type": "done",         "message_id": str}
-        """
         file_ids = file_ids or []
         is_new   = conversation_id is None
 
@@ -302,80 +164,76 @@ class ChatService:
                 yield {"type": "error", "message": "Conversation introuvable"}
                 return
 
-        # b. Événement conversation
         yield {"type": "conversation", "id": conversation_id, "is_new": is_new}
 
-        # c. Vérifications quota + accès modèle (AVANT l'appel LLM)
+        # b. Quotas
         if not await self._quota_svc.is_message_allowed(user_id):
-            yield {
-                "type":    "error",
-                "message": "quota_exceeded",
-            }
+            yield {"type": "error", "message": "quota_exceeded"}
             return
 
         if not self._sub_svc.check_can_use_model(user_id, provider, model_id):
-            yield {
-                "type":    "error",
-                "message": "model_access_denied",
-            }
+            yield {"type": "error", "message": "model_access_denied"}
             return
 
-        # c-bis. Vérification quota image (coupe tôt, avant même le stream texte)
-        if _wants_image(message):
-            if not await self._quota_svc.is_image_allowed(user_id):
-                yield {
-                    "type":    "error",
-                    "message": "image_quota_exceeded",
-                }
-                return
-
-        # d. Routage Automatique (si activé et tier Source+)
+        # c. Routage Automatique
         tier = self._sub_svc.get_tier(user_id)
         if auto_route and tier in _ROUTING_TIERS:
             try:
                 route = await router_agent.route(message, tier)
-                provider  = route["provider"]
-                model_id  = route["model_id"]
+                provider = route["provider"]
+                model_id = route["model_id"]
                 yield {
-                    "type":     "routing",
-                    "provider": provider,
-                    "model":    model_id,
-                    "reason":   route["reason"],
+                    "type": "routing", "provider": provider,
+                    "model": model_id, "reason": route["reason"],
                 }
             except Exception:
-                pass  # On garde le provider/modèle initial si le routage échoue
+                pass
 
-        # e. Enregistrer le message utilisateur
+        # e. Enregistrer message user
         self._msg_repo.create({
             "conversation_id": conversation_id,
-            "role":            "user",
-            "content":         message,
-            "provider":        provider,
-            "model_id":        model_id,
+            "role":    "user",
+            "content": message,
+            "provider": provider,
+            "model_id": model_id,
         })
 
-        # e. Récupérer l'historique complet
-        history = self._msg_repo.list_by_conversation(UUID(conversation_id))
-
-        # f. Préparer les fichiers (texte extrait + binaires multimodaux)
+        # f. Préparer contexte
+        history         = self._msg_repo.list_by_conversation(UUID(conversation_id))
         text_context, binary_files = self._prepare_files(file_ids, provider)
-
-        # g. Assembler le system prompt
-        system_prompt = get_full_system_prompt(tool_slug)
-
-        # h. Gestion du contexte long
+        system_prompt   = get_full_system_prompt(tool_slug)
         history_for_llm = await self._prepare_history(history, model_id)
 
-        # Convertir les rôles DB → rôles LLM ("assistant" → "model" pour Gemini)
+        # Injecter la grammaire de composition JSON uniquement quand create_document
+        # est disponible — pas lors d'un chat sans outils (économie de tokens).
+        from app.skills import load_document_skill
+        _doc_skill = load_document_skill()
+        if _doc_skill:
+            system_prompt = system_prompt + "\n\n---\n" + _doc_skill
+
+        # Remplacer les tags <!--boulga-file:...--> par un placeholder lisible
+        # pour que le LLM garde le contexte de ce qu'il a généré.
+        _file_tag_re = _re.compile(r'<!--boulga-file:(\{.*?\})-->', _re.DOTALL)
+
+        def _tag_to_context(match: _re.Match) -> str:
+            try:
+                data = _json.loads(match.group(1))
+                name = data.get("name", "fichier")
+                summary = data.get("summary", "")
+                if summary:
+                    return f"\n[Fichier généré : {name} — {summary}]"
+                return f"\n[Fichier généré : {name}]"
+            except Exception:
+                return "\n[Fichier généré]"
+
         llm_messages = [
             {
                 "role": "model" if m.get("role") == "assistant" else m.get("role", "user"),
-                "content": m.get("content", ""),
+                "content": _file_tag_re.sub(_tag_to_context, m.get("content", "")).strip(),
             }
             for m in history_for_llm
         ]
 
-        # Injecter le contenu textuel des fichiers dans le dernier message utilisateur
         if text_context:
             for i in range(len(llm_messages) - 1, -1, -1):
                 if llm_messages[i]["role"] == "user":
@@ -385,216 +243,62 @@ class ChatService:
                     }
                     break
 
-        # i. Détecter l'intention (image prioritaire sur fichier bureautique)
-        wants_img = _wants_image(message)
-        enable_code_exec = _wants_file(message) and not wants_img
-        if wants_img:
-            system_prompt = system_prompt + IMAGE_GENERATION_ADDENDUM
-        elif enable_code_exec:
-            system_prompt = system_prompt + FILE_GENERATION_ADDENDUM
+        files_arg = binary_files if binary_files else None
 
-        # j. Streamer via llm_manager
+        # g. Appel LLM — streaming avec outils (tool_choice="auto")
+        # Texte streamé token par token, tool_call accumulé jusqu'à la fin du stream.
         full_response = ""
-        accumulated_code: list[str] = []
-        gemini_binary_files: list[dict] = []
-        claude_tool_calls: list[dict] = []
-        # Quand enable_code_exec est actif, masquer les blocs de code Python (UX propre)
-        _code_block_depth = 0
+        tool_call_result: dict | None = None
+
         try:
-            async for event in llm_manager.stream_chat(
+            async for event in llm_manager.stream_with_tools(
                 provider=provider,
                 model_id=model_id,
                 messages=llm_messages,
                 system_prompt=system_prompt,
-                files=binary_files if binary_files else None,
-                enable_code_execution=enable_code_exec and provider in ("gemini", "claude"),
+                files=files_arg,
+                tools=[CREATE_DOCUMENT_TOOL],
+                effort=effort,
             ):
-                if event["type"] == "text":
+                if event["type"] == "chunk":
                     full_response += event["text"]
-                    if enable_code_exec:
-                        # Compter les ``` pour savoir si on est dans un bloc de code
-                        chunk = event["text"]
-                        for line in chunk.splitlines(keepends=True):
-                            stripped = line.strip()
-                            if stripped.startswith("```"):
-                                if _code_block_depth == 0:
-                                    _code_block_depth = 1  # entrée dans le bloc
-                                else:
-                                    _code_block_depth = 0  # sortie du bloc
-                            elif _code_block_depth == 0:
-                                yield {"type": "chunk", "text": line}
-                    else:
-                        yield {"type": "chunk", "text": event["text"]}
-                elif event["type"] == "code":
-                    accumulated_code.append(event["code"])
-                    # Code natif Gemini/Claude : ne pas afficher le code technique
-                elif event["type"] == "code_result":
-                    if event.get("output"):
-                        yield {"type": "chunk", "text": f"\n*Résultat :* {event['output']}\n"}
-                elif event["type"] == "file_data":
-                    # Gemini a généré un fichier binaire directement via code_execution
-                    from datetime import timezone
-                    ext_map = {
-                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
-                        "application/pdf": "pdf",
-                        "text/csv": "csv",
-                        "text/plain": "txt",
-                    }
-                    mime_type = event["mime_type"]
-                    ext = ext_map.get(mime_type, "bin")
-                    filename = f"document_{date.today().strftime('%Y%m%d')}.{ext}"
-                    gemini_binary_files.append({
-                        "data": event["data"],
-                        "mime_type": mime_type,
-                        "filename": filename,
-                    })
-                elif event["type"] == "tool_create_file":
-                    claude_tool_calls.append(event["tool_input"])
+                    yield {"type": "chunk", "text": event["text"]}
+                elif event["type"] == "tool_call":
+                    tool_call_result = event
+
         except Exception as exc:
             yield {"type": "error", "message": getattr(exc, "message", str(exc))}
             return
 
-        # k. Enregistrer la réponse de l'assistant
+        # h. Enregistrer réponse assistant
         assistant_msg = self._msg_repo.create({
             "conversation_id": conversation_id,
-            "role":            "assistant",
-            "content":         full_response,
-            "provider":        provider,
-            "model_id":        model_id,
+            "role":    "assistant",
+            "content": full_response,
+            "provider": provider,
+            "model_id": model_id,
         })
 
-        # l. Consommer le quota (message + tokens estimés)
+        # i. Quota message
         try:
             await self._quota_svc.consume_message(user_id)
-            tokens_est = _estimate_tokens(full_response)
-            await self._quota_svc.consume_tokens(user_id, tokens_est)
+            await self._quota_svc.consume_tokens(user_id, _estimate_tokens(full_response))
         except Exception:
             pass
 
-        # l-image. Générer l'image si demandée
-        if wants_img:
-            try:
-                await self._quota_svc.consume_image(user_id)
+        # j. Génération de fichier — deux chemins selon l'outil appelé
+        if tool_call_result and tool_call_result.get("name") == "create_document":
+            msg_id = assistant_msg["id"] if assistant_msg else None
+            async for event in self._handle_document_creation(
+                tool_call_result["arguments"],
+                user_id=user_id,
+                conversation_id=conversation_id,
+                message_id=msg_id,
+            ):
+                yield event
 
-                # Img2img : si l'utilisateur demande une modification, passer l'image précédente
-                prev_image_bytes: bytes | None = None
-                if wants_image_modification(message):
-                    prev_image_bytes = _get_last_image_from_history(history)
-
-                img_result = await generate_image(
-                    provider=provider,
-                    prompt=message,
-                    user_id=user_id,
-                    conversation_id=conversation_id,
-                    message_id=assistant_msg["id"] if assistant_msg else None,
-                    previous_image_bytes=prev_image_bytes,
-                )
-                # Note discrète si fallback vers GPT Image
-                if img_result["used_fallback"]:
-                    yield {
-                        "type": "chunk",
-                        "text": "\n\n*Image générée via GPT Image.*",
-                    }
-                yield {
-                    "type":       "file_ready",
-                    "file_id":    img_result["file_id"],
-                    "filename":   img_result["filename"],
-                    "mime_type":  "image/png",
-                    "size_bytes": img_result["size_bytes"],
-                    "url":        img_result["url"],
-                    "is_image":   True,
-                }
-            except ImageGenerationError as img_err:
-                yield {"type": "error", "message": f"Génération image échouée : {img_err}"}
-            except Exception as img_err:
-                yield {"type": "error", "message": f"Erreur image : {img_err}"}
-
-        # l-bis. Stocker les fichiers binaires Gemini (code_execution inline_data)
-        if gemini_binary_files:
-            file_svc = FileService()
-            for gf in gemini_binary_files:
-                try:
-                    record = file_svc.store_generated_file(
-                        user_id=user_id,
-                        filename=gf["filename"],
-                        content=gf["data"],
-                        mime_type=gf["mime_type"],
-                        conversation_id=conversation_id,
-                        message_id=assistant_msg["id"] if assistant_msg else None,
-                    )
-                    yield {
-                        "type": "file_ready",
-                        "file_id": record["id"],
-                        "filename": gf["filename"],
-                        "mime_type": gf["mime_type"],
-                        "size_bytes": len(gf["data"]),
-                        "url": record.get("signed_url") or f"/api/files/{record['id']}/download",
-                    }
-                except Exception as store_err:
-                    yield {"type": "error", "message": f"Erreur stockage fichier Gemini : {store_err}"}
-
-        # l-ter. Créer les fichiers depuis les appels d'outil Claude (create_file)
-        if claude_tool_calls:
-            file_svc = FileService()
-            for tool_input in claude_tool_calls:
-                try:
-                    file_bytes, mime_type, filename = _create_file_from_claude_tool(tool_input)
-                    record = file_svc.store_generated_file(
-                        user_id=user_id,
-                        filename=filename,
-                        content=file_bytes,
-                        mime_type=mime_type,
-                        conversation_id=conversation_id,
-                        message_id=assistant_msg["id"] if assistant_msg else None,
-                    )
-                    yield {
-                        "type": "file_ready",
-                        "file_id": record["id"],
-                        "filename": filename,
-                        "mime_type": mime_type,
-                        "size_bytes": len(file_bytes),
-                        "url": record.get("signed_url") or f"/api/files/{record['id']}/download",
-                    }
-                except Exception as e:
-                    yield {"type": "error", "message": f"Erreur création fichier Claude : {e}"}
-
-        # l-quater. Exécuter le code généré et stocker les fichiers produits
-        if enable_code_exec and not accumulated_code:
-            accumulated_code = _extract_python_blocks(full_response)
-
-        if accumulated_code:
-            executor = CodeExecutor()
-            file_svc = FileService()
-            for code_block in accumulated_code:
-                try:
-                    produced = await executor.execute(code_block, timeout=30.0)
-                except CodeExecutionError as exec_err:
-                    yield {"type": "error", "message": f"Exécution échouée : {exec_err}"}
-                    continue
-                for file_info in produced:
-                    try:
-                        record = file_svc.store_generated_file(
-                            user_id=user_id,
-                            filename=file_info["filename"],
-                            content=file_info["content"],
-                            mime_type=file_info["mime_type"],
-                            conversation_id=conversation_id,
-                            message_id=assistant_msg["id"] if assistant_msg else None,
-                        )
-                        yield {
-                            "type": "file_ready",
-                            "file_id": record["id"],
-                            "filename": file_info["filename"],
-                            "mime_type": file_info["mime_type"],
-                            "size_bytes": len(file_info["content"]),
-                            "url": record.get("signed_url") or f"/api/files/{record['id']}/download",
-                        }
-                    except Exception as store_err:
-                        yield {"type": "error", "message": f"Erreur stockage fichier : {store_err}"}
-
-        # m. Générer le titre si nouvelle conversation
-        if is_new and full_response:
+        # k. Titre si nouvelle conversation
+        if is_new:
             try:
                 title_prompt = TITLE_GENERATION_PROMPT.format(message=message[:300])
                 raw_title = await llm_manager.generate_text(
@@ -608,5 +312,321 @@ class ChatService:
             except Exception:
                 pass
 
-        # n. Done
+        # m. Done
         yield {"type": "done", "message_id": assistant_msg["id"]}
+
+    # ── Persistance metadata fichier dans le message ──────────────────
+
+    def _embed_file_tag(
+        self,
+        message_id: str | None,
+        url: str,
+        name: str,
+        size: int,
+        mime_type: str,
+        summary: str = "",
+    ) -> None:
+        """
+        Appende un tag JSON caché dans le contenu du message en DB.
+        Permet de reconstruire fileReady au rechargement de la conversation.
+        Format : <!--boulga-file:{...}-->
+        """
+        if not message_id:
+            return
+        try:
+            from uuid import UUID as _UUID
+            tag = "<!--boulga-file:" + _json.dumps({
+                "url":      url,
+                "name":     name,
+                "size":     size,
+                "mimeType": mime_type,
+                "summary":  summary,
+            }) + "-->"
+            msg = self._msg_repo.get_by_id(_UUID(message_id))
+            if msg:
+                new_content = (msg.get("content") or "") + tag
+                self._msg_repo.update_content(message_id, new_content)
+        except Exception:
+            logger.error("Échec _embed_file_tag pour message_id=%s", message_id, exc_info=True)
+
+    # ── Rendu de document via JSON de blocs (create_document) ─────────
+
+    async def _handle_document_creation(
+        self,
+        arguments: dict,
+        user_id: str,
+        conversation_id: str | None,
+        message_id: str | None,
+    ):
+        """
+        Convertit le JSON de blocs produit par le LLM en fichier docx ou pdf,
+        sans aucun deuxième appel LLM ni exécution de code Python.
+
+        Flux :
+          1. Valide quota fichier
+          2. Appelle render_document(fmt, doc_dict) → (bytes, mime)
+          3. Stocke le fichier, embed le tag <!--boulga-file-->
+          4. Yield file_ready
+        """
+        from app.documents import render_document
+        from app.services.file_service import FileService
+
+        if not await self._quota_svc.is_file_allowed(user_id):
+            yield {
+                "type":    "file_generation_error",
+                "message": "Limite de fichiers atteinte. Passez à un plan supérieur.",
+            }
+            return
+
+        fmt      = arguments.get("format", "docx")
+        filename = arguments.get("filename", f"document.{fmt}")
+        summary  = arguments.get("summary", "")
+        doc_data = arguments.get("document", {})
+
+        yield {"type": "file_building", "step": f"⚙️ Rendu du document {fmt.upper()}…"}
+
+        try:
+            file_bytes, mime_type = render_document(fmt, doc_data)
+        except Exception as exc:
+            yield {"type": "file_generation_error", "message": f"Erreur de rendu : {exc}"}
+            return
+
+        try:
+            file_svc = FileService()
+            record = file_svc.store_generated_file(
+                user_id=user_id,
+                filename=filename,
+                content=file_bytes,
+                mime_type=mime_type,
+                conversation_id=conversation_id,
+                message_id=message_id,
+            )
+            await self._quota_svc.consume_file(user_id)
+        except Exception as store_err:
+            yield {
+                "type":    "file_generation_error",
+                "message": f"Erreur stockage fichier : {store_err}",
+            }
+            return
+
+        display_url = f"/api/files/{record['id']}/download"
+        self._embed_file_tag(
+            message_id=message_id,
+            url=display_url,
+            name=filename,
+            size=len(file_bytes),
+            mime_type=mime_type,
+            summary=summary,
+        )
+
+        yield {
+            "type":       "file_ready",
+            "file_id":    record["id"],
+            "filename":   filename,
+            "mime_type":  mime_type,
+            "size_bytes": len(file_bytes),
+            "url":        record.get("signed_url") or display_url,
+            "is_image":   False,
+            "summary":    summary,
+        }
+
+    # ── Génération de fichier depuis tool_call ─────────────────────────
+
+    async def _handle_file_creation(
+        self,
+        arguments: dict,
+        user_id: str,
+        conversation_id: str | None,
+        message_id: str | None,
+        provider: str,
+        model_id: str,
+    ) -> AsyncIterator[dict]:
+        """
+        Génère le fichier en deux phases avec boucle de correction (max 3 tentatives) :
+        - Phase 2 : charge le SKILL.md du format → appel LLM → code Python.
+        - Phase 3 : exécute le code en subprocess isolé (os.chdir(tmpdir) déjà fait).
+        Si le code plante ou ne produit pas de fichier valide, l'erreur est renvoyée
+        au LLM qui corrige et réessaie. Maximum _MAX_ATTEMPTS tentatives.
+        """
+        from pathlib import Path as _Path
+        from app.services.code_executor import CodeExecutor
+        from app.services.file_service import FileService
+        from app.skills import load_skill
+
+        _MAX_ATTEMPTS = 3
+
+        if not await self._quota_svc.is_file_allowed(user_id):
+            yield {
+                "type":    "file_generation_error",
+                "message": "Limite de fichiers atteinte. Passez à un plan supérieur.",
+            }
+            return
+
+        fmt      = arguments.get("format", "txt")
+        filename = arguments.get("filename", f"document.{fmt}")
+        summary  = arguments.get("summary", "")
+
+        # ── System prompt pour la génération de code ──
+        skill = load_skill(fmt)
+        system_for_code = (
+            (skill + "\n\n---\n") if skill else
+            "Tu es un générateur de code Python pour créer des fichiers bureautiques.\n"
+        ) + (
+            "Génère uniquement du code Python, sans markdown, sans explication, sans balises ```.\n"
+            f"Sauvegarde le fichier avec ce nom exact : `{filename}` "
+            f"(ex: doc.save('{filename}')). Le répertoire de travail est déjà positionné.\n"
+            "Utilise print() à chaque étape clé pour montrer l'avancement."
+        )
+
+        def _clean(raw: str) -> str:
+            s = _re.sub(r'^```(?:python)?\n?', '', raw.strip(), flags=_re.MULTILINE)
+            return _re.sub(r'\n?```$', '', s.strip(), flags=_re.MULTILINE).strip()
+
+        executor   = CodeExecutor()
+        last_error: str | None = None
+        last_code: str | None = None
+        file_bytes: bytes | None = None
+        mime_type:  str   | None = None
+
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+
+            # ── Phase 2 : génération / correction du code ──
+            if attempt == 1:
+                yield {"type": "file_building", "step": f"⚙️ Génération du code {fmt.upper()}..."}
+                prompt = (
+                    f"Génère le code Python pour créer ce fichier {fmt.upper()} "
+                    f"nommé '{filename}'.\n"
+                    f"Sauvegarde le fichier sous ce nom exact : `{filename}`.\n"
+                    f"Contenu attendu : {summary}"
+                )
+            else:
+                yield {"type": "file_building", "step": f"🔧 Correction en cours (tentative {attempt}/{_MAX_ATTEMPTS})..."}
+                prompt = (
+                    f"Le code précédent pour générer '{filename}' a échoué.\n"
+                    f"Voici le code complet qui a échoué :\n```python\n{last_code or ''}\n```\n"
+                    f"Traceback / message d'erreur complet :\n{last_error or 'Aucune sortie fournie.'}\n\n"
+                    f"Le code ci-dessus a produit cette erreur. Corrige le code et renvoie la version corrigée complète via create_file. "
+                    f"Ne reproduis pas la même erreur.\n"
+                    f"Génère le code Python corrigé pour créer ce fichier {fmt.upper()} "
+                    f"nommé '{filename}'.\n"
+                    f"Sauvegarde le fichier sous ce nom exact : `{filename}`.\n"
+                    f"Contenu : {summary}"
+                )
+            code_max_tokens = {
+                "gemini-2.5-flash":  16384,
+                "gemini-2.5-pro":    16384,
+                "claude-haiku-4-5":  8192,
+                "claude-sonnet-4-6": 16384,
+                "claude-opus-4-6":   16384,
+                "gpt-5.5-instant":   16384,
+                "gpt-5.5-pro":       16384,
+                "deepseek-v4-flash": 16384,
+                "deepseek-v4-pro":   16384,
+            }.get(model_id, 8192)
+
+            try:
+                raw_code = await llm_manager.generate_text(
+                    provider=provider,
+                    model_id=model_id,
+                    prompt=prompt,
+                    system_prompt=system_for_code,
+                    max_tokens=code_max_tokens,
+                    log_finish_reason=True,
+                )
+            except Exception as exc:
+                yield {"type": "file_generation_error", "message": f"Erreur LLM : {exc}"}
+                return
+
+            last_code = _clean(raw_code)
+            code = last_code
+            if not code:
+                last_error = "Code vide retourné par le LLM."
+                continue
+
+            # ── Phase 3 : exécution du code ──
+            # os.chdir(tmpdir) est injecté par CodeExecutor — aucune variable magique nécessaire.
+            logs: list[str] = []
+            file_bytes = None
+            mime_type  = None
+            exec_error: str | None = None
+
+            async for event in executor.execute_streaming(code, timeout=90.0):
+                if event["type"] == "log":
+                    logs.append(event["line"])
+                    yield {"type": "file_building", "step": event["line"]}
+                elif event["type"] == "done":
+                    # Validation : bonne extension + taille > 0
+                    expected_ext = f".{fmt}"
+                    valid = [
+                        f for f in event.get("files", [])
+                        if _Path(f["filename"]).suffix.lower() == expected_ext
+                        and len(f["content"]) > 0
+                    ]
+                    if valid:
+                        file_bytes = valid[0]["content"]
+                        mime_type  = valid[0]["mime_type"]
+                    elif event.get("files"):
+                        # Fichier produit mais mauvaise extension — on l'accepte quand même
+                        first = event["files"][0]
+                        if len(first["content"]) > 0:
+                            file_bytes = first["content"]
+                            mime_type  = first["mime_type"]
+                        else:
+                            exec_error = "Fichier produit vide (taille 0)."
+                    else:
+                        exec_error = f"Aucun fichier .{fmt} produit par le script."
+                elif event["type"] == "error":
+                    exec_error = event["message"]
+
+            if file_bytes is not None and mime_type is not None:
+                break  # succès — sortir de la boucle de correction
+
+            last_error = "\n".join(logs[-40:]) + (f"\nErreur : {exec_error}" if exec_error else "\nAucun fichier produit.")
+
+        else:
+            # Toutes les tentatives ont échoué
+            yield {
+                "type":    "file_generation_error",
+                "message": f"Échec après {_MAX_ATTEMPTS} tentatives.\n{last_error or ''}",
+            }
+            return
+
+        # ── Stockage et réponse ──
+        try:
+            file_svc = FileService()
+            record = file_svc.store_generated_file(
+                user_id=user_id,
+                filename=filename,
+                content=file_bytes,
+                mime_type=mime_type,
+                conversation_id=conversation_id,
+                message_id=message_id,
+            )
+            await self._quota_svc.consume_file(user_id)
+        except Exception as store_err:
+            yield {
+                "type":    "file_generation_error",
+                "message": f"Erreur stockage fichier : {store_err}",
+            }
+            return
+
+        display_url = f"/api/files/{record['id']}/download"
+        self._embed_file_tag(
+            message_id=message_id,
+            url=display_url,
+            name=filename,
+            size=len(file_bytes),
+            mime_type=mime_type,
+            summary=summary,
+        )
+
+        yield {
+            "type":       "file_ready",
+            "file_id":    record["id"],
+            "filename":   filename,
+            "mime_type":  mime_type,
+            "size_bytes": len(file_bytes),
+            "url":        record.get("signed_url") or display_url,
+            "is_image":   False,
+            "summary":    summary,
+        }

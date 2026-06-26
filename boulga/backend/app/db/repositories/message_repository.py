@@ -46,6 +46,9 @@ class MessageRepository:
         )
         return result.count or 0
 
+    def update_content(self, message_id: str, content: str) -> None:
+        self.db.table(TABLE).update({"content": content}).eq("id", message_id).execute()
+
     def delete_by_conversation(self, conversation_id: UUID) -> bool:
         self.db.table(TABLE).delete().eq("conversation_id", str(conversation_id)).execute()
         return True

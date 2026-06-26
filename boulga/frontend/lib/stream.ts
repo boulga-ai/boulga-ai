@@ -11,6 +11,8 @@ export interface ChatPayload {
   file_ids?: string[];
   tool_slug?: string | null;
   auto_route?: boolean;
+  effort?: string;
+  enable_search?: boolean;
 }
 
 export interface RoutingInfo {
@@ -24,7 +26,10 @@ export interface StreamHandlers {
   onRouting?: (info: RoutingInfo) => void;
   onChunk: (text: string) => void;
   onTitle: (title: string) => void;
-  onFileReady: (url: string, name: string, format: string, size: number, isImage: boolean) => void;
+  onFileReady: (url: string, name: string, format: string, size: number, isImage: boolean, summary?: string) => void;
+  onFileBuildingStep?: (step: string) => void;
+  onImageNotSupported?: (provider: string, message: string) => void;
+  onFileGenerationError?: (message: string) => void;
   onDone: (messageId: string) => void;
   onError: (message: string) => void;
 }
@@ -136,7 +141,20 @@ export function streamChat(
                 event.mime_type as string,
                 event.size_bytes as number,
                 Boolean(event.is_image),
+                event.summary as string | undefined,
               );
+              break;
+            case "image_not_supported":
+              handlers.onImageNotSupported?.(
+                event.provider as string,
+                event.message as string,
+              );
+              break;
+            case "file_building":
+              handlers.onFileBuildingStep?.(event.step as string);
+              break;
+            case "file_generation_error":
+              handlers.onFileGenerationError?.(event.message as string);
               break;
             case "done":
               handlers.onDone(event.message_id as string);

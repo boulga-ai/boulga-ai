@@ -4,6 +4,8 @@
 
 export type Tier = "free" | "goutte" | "source" | "fleuve" | "ocean";
 
+export type EffortLevel = "low" | "medium" | "high" | "max";
+
 export type BillingCycle = "monthly" | "annual";
 
 export type MessageRole = "user" | "assistant" | "system";
@@ -97,6 +99,7 @@ export interface Message {
     name: string;
     size: number;
     mimeType?: string;
+    summary?: string;
   };
 }
 

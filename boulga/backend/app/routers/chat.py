@@ -36,6 +36,8 @@ async def chat(
             file_ids=request.file_ids,
             tool_slug=request.tool_slug,
             auto_route=request.auto_route,
+            effort=request.effort,
+            enable_search=request.enable_search,
         ):
             yield sse_event(event)
 

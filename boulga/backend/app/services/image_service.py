@@ -1,17 +1,9 @@
-"""image_service.py — Génération et modification d'images via OpenRouter.
+"""image_service.py — Génération d'images via OpenRouter.
 
-Les modèles image d'OpenRouter retournent les images dans message.images[0].image_url.url
-sous forme de data URI (data:image/png;base64,...).
+Providers supportés : gemini, chatgpt (openai)
+Providers non supportés : claude, deepseek → retourner is_image_supported() = False
 
-Routing :
-  gemini   → google/gemini-2.5-flash-image  (Nano Banana)
-  chatgpt  → openai/gpt-5-image-mini
-  claude   → google/gemini-2.5-flash-image  (Claude ne génère pas d'images)
-  deepseek → google/gemini-2.5-flash-image  (DeepSeek ne génère pas d'images)
-
-Support img2img :
-  Si previous_image_bytes est fourni, l'image précédente est passée en contexte
-  multimodal → le modèle la modifie au lieu d'en créer une nouvelle.
+Le caller (chat_service) vérifie is_image_supported() avant d'appeler generate_image().
 """
 
 from __future__ import annotations
@@ -29,35 +21,23 @@ from app.services.file_service import FileService
 
 logger = logging.getLogger(__name__)
 
-# ── Mapping provider → modèle image OpenRouter ───────────────────────────────
+# ── Providers qui supportent la génération d'images ──────────────────────────
 
+_IMAGE_SUPPORTED_PROVIDERS: set[str] = {"gemini", "chatgpt", "openai"}
+
+# Mapping provider → modèle image OpenRouter
 _IMAGE_MODELS: dict[str, str] = {
-    "gemini":   "google/gemini-2.5-flash-image",
-    "chatgpt":  "openai/gpt-5-image-mini",
-    "claude":   "google/gemini-2.5-flash-image",
-    "deepseek": "google/gemini-2.5-flash-image",
+    "gemini":  "google/gemini-2.5-flash-image",
+    "chatgpt": "openai/gpt-5-image-mini",
+    "openai":  "openai/gpt-5-image-mini",
 }
-
-_FALLBACK_PROVIDERS = {"claude", "deepseek"}
 
 _OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Mots-clés indiquant une modification d'image existante
-_MODIFY_RE = re.compile(
-    r"\b(modifie|modifier|change|changer|ajoute|ajouter|enlève|enlever|"
-    r"retire|retirer|remplace|remplacer|transforme|transformer|"
-    r"mets|mettre|rends|rendre|adapte|adapter|refais|refaire|"
-    r"edit|update|modify|add|remove|change)\b",
-    re.IGNORECASE | re.UNICODE,
-)
 
-
-def wants_image_modification(message: str) -> bool:
-    """Retourne True si le message semble demander une modification d'image existante."""
-    return bool(_MODIFY_RE.search(message))
-
-
-# ── Service ───────────────────────────────────────────────────────────────────
+def is_image_supported(provider: str) -> bool:
+    """Retourne True si ce provider peut générer des images."""
+    return provider in _IMAGE_SUPPORTED_PROVIDERS
 
 
 class ImageGenerationError(Exception):
@@ -70,46 +50,35 @@ async def generate_image(
     user_id: str,
     conversation_id: str | None = None,
     message_id: str | None = None,
-    previous_image_bytes: bytes | None = None,
 ) -> dict:
     """
-    Génère ou modifie une image via OpenRouter et la stocke dans Supabase.
-
-    Si previous_image_bytes est fourni, l'image est passée en contexte multimodal
-    (img2img) — le modèle modifie l'image existante au lieu d'en créer une nouvelle.
+    Génère une image via OpenRouter et la stocke dans Supabase.
+    Seuls gemini et chatgpt/openai sont supportés.
 
     Retourne :
       {
         "file_id": str,
-        "url": str,              # URL signée Supabase (2h)
+        "url": str,
         "filename": str,
         "mime_type": "image/png",
         "size_bytes": int,
-        "used_fallback": bool,
       }
     """
-    model = _IMAGE_MODELS.get(provider, "google/gemini-2.5-flash-image")
-    used_fallback = provider in _FALLBACK_PROVIDERS
+    if not is_image_supported(provider):
+        raise ImageGenerationError(
+            f"{provider.capitalize()} ne supporte pas la génération d'images."
+        )
+
+    model = _IMAGE_MODELS.get(provider)
+    if not model:
+        raise ImageGenerationError(f"Modèle image introuvable pour {provider}")
 
     if not settings.OPENROUTER_API_KEY:
         raise ImageGenerationError("OPENROUTER_API_KEY non configurée")
 
-    # ── Construire le message utilisateur (texte seul ou multimodal) ──────────
-    if previous_image_bytes:
-        b64_img = base64.b64encode(previous_image_bytes).decode()
-        user_content = [
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{b64_img}"},
-            },
-            {"type": "text", "text": prompt},
-        ]
-    else:
-        user_content = prompt  # type: ignore[assignment]
-
     payload = {
         "model": model,
-        "messages": [{"role": "user", "content": user_content}],
+        "messages": [{"role": "user", "content": prompt}],
     }
 
     headers = {
@@ -177,10 +146,9 @@ async def generate_image(
     )
 
     return {
-        "file_id":       record["id"],
-        "url":           record.get("signed_url") or f"/api/files/{record['id']}/download",
-        "filename":      filename,
-        "mime_type":     "image/png",
-        "size_bytes":    len(image_bytes),
-        "used_fallback": used_fallback,
+        "file_id":    record["id"],
+        "url":        record.get("signed_url") or f"/api/files/{record['id']}/download",
+        "filename":   filename,
+        "mime_type":  "image/png",
+        "size_bytes": len(image_bytes),
     }

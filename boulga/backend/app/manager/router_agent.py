@@ -6,6 +6,12 @@ Logique en deux passes :
 
 Le provider retourné est toujours vérifié contre le tier de l'utilisateur
 et l'état actif du registre. En cas d'indisponibilité, fallback sur gemini.
+
+NOTE — Règle absolue de Boulga :
+  Ce module décide QUEL provider/modèle utiliser (routage), PAS si générer un fichier.
+  Les regex ici (_CODE_RE, _LEGAL_RE, etc.) choisissent le meilleur LLM pour la tâche.
+  Elles ne détectent PAS l'intent de générer un fichier et ne forcent JAMAIS tool_choice.
+  La décision de générer un fichier appartient exclusivement au LLM via tool calling.
 """
 
 from __future__ import annotations

@@ -76,6 +76,12 @@ LLM_REGISTRY: dict[LLMProvider, LLMInfo] = {
                 tier=ModelTier.high,
                 description="Raisonnement avancé et analyse approfondie.",
             ),
+            ModelInfo(
+                id="claude-opus-4-6",
+                label="Claude Opus 4.6",
+                tier=ModelTier.high,
+                description="Le plus puissant de Claude. Raisonnement complexe, agents longs. Plan Océan uniquement.",
+            ),
         ],
     ),
     LLMProvider.openai: LLMInfo(
@@ -126,20 +132,25 @@ LLM_REGISTRY: dict[LLMProvider, LLMInfo] = {
     ),
 }
 
+# Modèles réservés au plan Océan (trop coûteux pour les plans inférieurs)
+_OCEAN_ONLY: set[str] = {"claude-opus-4-6"}
+
 # Accès modèles par tier d'abonnement
 # free    : gemini-2.5-flash uniquement
 # goutte  : gemini-2.5-flash + deepseek-v4-flash (éco seulement)
-# source  : tous LLM, tous modèles (low + high) — même accès que fleuve
-# fleuve  : identique source — la différence est dans les quotas et fonctionnalités
-# ocean   : tous LLM, tous modèles (identique source/fleuve pour les modèles)
+# source  : tous LLM, tous modèles sauf Océan-only
+# fleuve  : idem source — différence dans les quotas/fonctionnalités
+# ocean   : tous LLM, tous modèles y compris claude-opus-4-6
+_ALL_MODELS      = [m.id for llm in LLM_REGISTRY.values() for m in llm.models]
+_STANDARD_MODELS = [m for m in _ALL_MODELS if m not in _OCEAN_ONLY]
+
 _TIER_ACCESS: dict[str, list[str]] = {
-    "free": ["gemini-2.5-flash"],
+    "free":   ["gemini-2.5-flash"],
     "goutte": ["gemini-2.5-flash", "deepseek-v4-flash"],
+    "source": _STANDARD_MODELS,
+    "fleuve": _STANDARD_MODELS,
+    "ocean":  _ALL_MODELS,
 }
-_ALL_MODELS = [m.id for llm in LLM_REGISTRY.values() for m in llm.models]
-_TIER_ACCESS["source"] = _ALL_MODELS
-_TIER_ACCESS["fleuve"] = _ALL_MODELS
-_TIER_ACCESS["ocean"] = _ALL_MODELS
 
 
 def get_all_llms() -> list[LLMInfo]:
