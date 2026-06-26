@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import re as _re
 from typing import AsyncIterator, Optional
 
 import litellm
@@ -21,11 +22,11 @@ _OPENROUTER_MODELS: dict[str, str] = {
     "claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
     "claude-opus-4-6":   "anthropic/claude-opus-4.6",
     # ChatGPT (OpenAI)
-    "gpt-5.5-instant":   "openai/gpt-4o-mini",
-    "gpt-5.5-pro":       "openai/gpt-4o",
+    "gpt-5.5-instant":   "openai/gpt-5.5",
+    "gpt-5.5-pro":       "openai/gpt-5.5-pro",
     # DeepSeek
-    "deepseek-v4-flash": "deepseek/deepseek-chat",
-    "deepseek-v4-pro":   "deepseek/deepseek-r1",
+    "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
+    "deepseek-v4-pro":   "deepseek/deepseek-v4-pro",
 }
 
 # En-têtes requis par OpenRouter
@@ -39,27 +40,29 @@ _OR_TEMPERATURE: dict[str, float] = {
     "low": 0.2, "medium": 0.5, "high": 0.8, "max": 1.0,
 }
 
-# Max tokens par modèle pour les sorties longues
 _MAX_OUTPUT_TOKENS: dict[str, int] = {
-    "gemini-2.5-flash":  16384,
-    "gemini-2.5-pro":    16384,
-    "claude-haiku-4-5":  8192,
-    "claude-sonnet-4-6": 16384,
-    "claude-opus-4-6":   16384,
-    "gpt-5.5-instant":   16384,
-    "gpt-5.5-pro":       16384,
-    "deepseek-v4-flash": 16384,
-    "deepseek-v4-pro":   16384,
+    "gemini-2.5-flash":  65536,
+    "gemini-2.5-pro":    65536,
+    "claude-haiku-4-5":  65536,
+    "claude-sonnet-4-6": 65536,
+    "claude-opus-4-6":   65536,
+    "gpt-5.5-instant":   65536,
+    "gpt-5.5-pro":       65536,
+    "deepseek-v4-flash": 65536,
+    "deepseek-v4-pro":   65536,
 }
 
 
 def _max_tokens(model_id: str) -> int:
-    return _MAX_OUTPUT_TOKENS.get(model_id, 8192)
+    return _MAX_OUTPUT_TOKENS.get(model_id, 16384)
+
+_AFFORD_RE = _re.compile(r"can only afford (\d+)")
+
 
 async def _completion_with_fallback(kwargs: dict):
     try:
         return await litellm.acompletion(**kwargs)
-    except litellm.ContextWindowExceededError as exc:
+    except litellm.ContextWindowExceededError:
         max_tokens = kwargs.get("max_tokens")
         if isinstance(max_tokens, int) and max_tokens > 8192:
             fallback_tokens = max(max_tokens // 2, 8192)
@@ -71,6 +74,23 @@ async def _completion_with_fallback(kwargs: dict):
             )
             kwargs["max_tokens"] = fallback_tokens
             return await litellm.acompletion(**kwargs)
+        raise
+    except Exception as exc:
+        err = str(exc)
+        if "402" in err:
+            match = _AFFORD_RE.search(err)
+            if match:
+                affordable = int(match.group(1))
+                requested = kwargs.get("max_tokens", 0)
+                if 100 < affordable < requested:
+                    logger.warning(
+                        "Credits insufficient model=%s; retrying with max_tokens=%s (requested %s)",
+                        kwargs.get("model"),
+                        affordable,
+                        requested,
+                    )
+                    kwargs["max_tokens"] = affordable
+                    return await litellm.acompletion(**kwargs)
         raise
 
 # ── Tool create_file (schéma universel OpenRouter) ───────────────────────────
@@ -337,7 +357,9 @@ class LLMManager:
         if tools:
             kwargs["tools"] = tools
 
+        import time as _time
         tool_calls_acc: dict[int, dict] = {}
+        _last_heartbeat = 0.0
 
         response = await _completion_with_fallback(kwargs)
 
@@ -345,16 +367,17 @@ class LLMManager:
             choice = chunk.choices[0]
             delta = choice.delta
 
-            # Deltas de texte → yield immédiatement
             if delta and delta.content:
                 yield {"type": "chunk", "text": delta.content}
 
-            # Deltas de tool_call → accumuler
             if delta and delta.tool_calls:
+                now = _time.monotonic()
                 for tc_delta in delta.tool_calls:
                     idx = tc_delta.index
                     if idx not in tool_calls_acc:
                         tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                        yield {"type": "tool_started"}
+                        _last_heartbeat = now
                     if tc_delta.id:
                         tool_calls_acc[idx]["id"] = tc_delta.id
                     if tc_delta.function:
@@ -362,6 +385,9 @@ class LLMManager:
                             tool_calls_acc[idx]["name"] += tc_delta.function.name
                         if tc_delta.function.arguments:
                             tool_calls_acc[idx]["arguments"] += tc_delta.function.arguments
+                if now - _last_heartbeat >= 8:
+                    yield {"type": "tool_progress"}
+                    _last_heartbeat = now
 
         if tool_calls_acc:
             tc = tool_calls_acc[0]

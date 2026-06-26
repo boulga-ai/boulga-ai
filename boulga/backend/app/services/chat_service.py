@@ -31,12 +31,12 @@ MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     "gemini-2.5-flash":  1_000_000,
     "gemini-2.5-pro":    2_000_000,
     "claude-haiku-4-5":  200_000,
-    "claude-sonnet-4-6": 200_000,
-    "claude-opus-4-6":   200_000,
-    "gpt-5.5-instant":   128_000,
-    "gpt-5.5-pro":       200_000,
-    "deepseek-v4-flash": 128_000,
-    "deepseek-v4-pro":   128_000,
+    "claude-sonnet-4-6": 1_000_000,
+    "claude-opus-4-6":   1_000_000,
+    "gpt-5.5-instant":   1_000_000,
+    "gpt-5.5-pro":       1_000_000,
+    "deepseek-v4-flash": 1_000_000,
+    "deepseek-v4-pro":   1_000_000,
 }
 
 _ECO_PROVIDER = "gemini"
@@ -263,11 +263,21 @@ class ChatService:
                 if event["type"] == "chunk":
                     full_response += event["text"]
                     yield {"type": "chunk", "text": event["text"]}
+                elif event["type"] == "tool_started":
+                    yield {"type": "file_building", "step": "⚙️ Génération du document en cours…"}
+                elif event["type"] == "tool_progress":
+                    yield {"type": "file_building", "step": "⚙️ Composition en cours…"}
                 elif event["type"] == "tool_call":
                     tool_call_result = event
 
         except Exception as exc:
-            yield {"type": "error", "message": getattr(exc, "message", str(exc))}
+            raw = getattr(exc, "message", str(exc))
+            if "402" in raw or "credits" in raw.lower() or "afford" in raw.lower():
+                msg = "Service temporairement indisponible. Veuillez réessayer dans quelques instants."
+            else:
+                msg = raw if len(raw) < 200 else "Une erreur est survenue. Veuillez réessayer."
+            logger.error("LLM error provider=%s model=%s: %s", provider, model_id, raw[:300])
+            yield {"type": "error", "message": msg}
             return
 
         # h. Enregistrer réponse assistant

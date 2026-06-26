@@ -18,7 +18,7 @@ const EFFORT_OPTIONS: { value: EffortLevel; label: string; hint: string }[] = [
 const PROVIDER_COLORS: Record<string, string> = {
   gemini: "#1565C0",
   claude: "#D97706",
-  chatgpt: "#10B981",
+  openai: "#10B981",
   deepseek: "#7C3AED",
 };
 

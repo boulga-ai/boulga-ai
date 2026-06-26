@@ -448,25 +448,27 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
             _abortController: null,
           }));
 
-          // Quota épuisé → ouvrir la modal bloquante
           if (message === "quota_exceeded") {
             useSubscriptionStore.getState().setShowQuotaModal(true);
-          }
-          // Modèle / provider non accessible
-          if (message === "model_access_denied") {
+          } else if (message === "model_access_denied") {
             useToastStore.getState().addToast({
               type: "info",
-              title: "Provider non disponible",
-              message: "Ce modèle n'est pas encore disponible. Seul Gemini est actif pour le moment.",
+              title: "Modèle non disponible",
+              message: "Ce modèle n'est pas inclus dans votre offre actuelle.",
+              action: { label: "Voir les offres", href: "/pricing" },
             });
-          }
-          // Quota fichiers épuisé → toast avec lien vers /pricing
-          if (message === "file_quota_exceeded") {
+          } else if (message === "file_quota_exceeded") {
             useToastStore.getState().addToast({
               type: "warning",
               title: "Limite de fichiers atteinte",
               message: "Vous avez atteint votre quota de génération de fichiers. Passez à un plan supérieur pour continuer.",
               action: { label: "Voir les offres", href: "/pricing" },
+            });
+          } else {
+            useToastStore.getState().addToast({
+              type: "warning",
+              title: "Erreur",
+              message: message.length > 200 ? "Une erreur est survenue. Veuillez réessayer." : message,
             });
           }
         },

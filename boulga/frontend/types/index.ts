@@ -10,7 +10,7 @@ export type BillingCycle = "monthly" | "annual";
 
 export type MessageRole = "user" | "assistant" | "system";
 
-export type Provider = "gemini" | "claude" | "chatgpt" | "deepseek";
+export type Provider = "gemini" | "claude" | "openai" | "deepseek";
 
 // ============================================================
 // LLM & Models

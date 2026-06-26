@@ -28,7 +28,7 @@ function providerLabel(provider?: string, modelId?: string): string {
   const providerNames: Record<string, string> = {
     gemini: "Gemini",
     claude: "Claude",
-    chatgpt: "ChatGPT",
+    openai: "ChatGPT",
     deepseek: "DeepSeek",
   };
   const modelLabels: Record<string, string> = {
