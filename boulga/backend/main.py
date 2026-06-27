@@ -16,7 +16,7 @@ from app.routers import (
 )
 
 
-from app.test_chat import router_test
+
 
 
 app = FastAPI(
@@ -46,7 +46,6 @@ app.include_router(search.router)
 app.include_router(admin.router)
 
 
-app.include_router(router_test.router)
 
 @app.post("/api/internal/cron/expiry-reminders", include_in_schema=False)
 async def cron_expiry_reminders(x_cron_secret: str | None = None):

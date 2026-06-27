@@ -44,19 +44,21 @@ export default function RootLayout({
       <body className="font-body bg-neutral-bg text-neutral-text antialiased">
         {children}
         <ToastContainer />
-        <Script
-          id="sw-register"
-          strategy="afterInteractive"
-          dangerouslySetInnerHTML={{
-            __html: `
-              if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js').catch(function() {});
-                });
-              }
-            `,
-          }}
-        />
+        {process.env.NODE_ENV === "production" && (
+          <Script
+            id="sw-register"
+            strategy="afterInteractive"
+            dangerouslySetInnerHTML={{
+              __html: `
+                if ('serviceWorker' in navigator) {
+                  window.addEventListener('load', function() {
+                    navigator.serviceWorker.register('/sw.js').catch(function() {});
+                  });
+                }
+              `,
+            }}
+          />
+        )}
       </body>
     </html>
   );

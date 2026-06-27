@@ -7,12 +7,15 @@ Types de retour de get_file_content_for_llm :
 """
 import csv
 import io
+import logging
 import uuid
 from typing import Optional
 from uuid import UUID
 
 from app.db.repositories.file_repository import FileRepository
 from app.db.session import get_supabase
+
+logger = logging.getLogger(__name__)
 
 # ── Constantes ───────────────────────────────────────────────────────────────
 
@@ -145,14 +148,22 @@ class FileService:
 
         record = self._repo.create(data)
 
-        # Générer une URL signée Supabase (7200s = 2h) pour accès public direct
         try:
             signed = self._db.storage.from_(GENERATED_BUCKET).create_signed_url(
                 path=path_in_bucket,
                 expires_in=7200,
             )
-            record["signed_url"] = signed.get("signedURL") or signed.get("signed_url") or None
-        except Exception:
+            url = None
+            if isinstance(signed, dict):
+                url = signed.get("signedURL") or signed.get("signed_url")
+            elif hasattr(signed, "signed_url"):
+                url = signed.signed_url
+            elif hasattr(signed, "signedURL"):
+                url = signed.signedURL
+            record["signed_url"] = url
+            logger.info("Signed URL for %s: %s (raw type=%s)", path_in_bucket, bool(url), type(signed).__name__)
+        except Exception as exc:
+            logger.warning("Failed to create signed URL for %s: %s", path_in_bucket, exc)
             record["signed_url"] = None
 
         return record

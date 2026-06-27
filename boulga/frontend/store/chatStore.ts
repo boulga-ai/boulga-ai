@@ -6,12 +6,14 @@ import {
   deleteConversation as apiDeleteConversation,
 } from "@/lib/api";
 import { streamChat, type RoutingInfo } from "@/lib/stream";
+import { API_URL } from "@/lib/constants";
 import { useDocStore } from "@/store/docStore";
 import { useSubscriptionStore } from "@/store/subscriptionStore";
 import { useToastStore } from "@/store/toastStore";
 import type { Conversation, Message, LLM, EffortLevel } from "@/types";
 
 const LONG_RESPONSE_WORDS = 500;
+const _FILE_TAG_RE = /<!--file:\{.*?\}-->/gs;
 
 function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
@@ -57,10 +59,6 @@ interface ChatState {
   selectedModel: string;
   isStreaming: boolean;
   streamingText: string;
-
-  // Génération de fichier (progression)
-  isBuilding: boolean;
-  buildingLogs: string[];
 
   // Routage Automatique
   autoRoute: boolean;
@@ -109,8 +107,6 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
   selectedModel:    _savedModel?.model    ?? "gemini-2.5-flash",
   isStreaming: false,
   streamingText: "",
-  isBuilding: false,
-  buildingLogs: [],
   autoRoute: false,
   routingInfo: null,
   effort: "medium",
@@ -124,7 +120,7 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
       const llms = await getLLMs();
       set({ llms });
     } catch {
-      // erreur silencieuse — les LLMs seront rechargés au prochain rendu
+      // erreur silencieuse
     }
   },
 
@@ -138,7 +134,6 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
   },
 
   loadConversation: async (id: string) => {
-    // Interrompre tout streaming en cours (changement de conversation pendant génération)
     const { _abortController } = get();
     if (_abortController) {
       _abortController.abort();
@@ -146,8 +141,6 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
     set({
       isStreaming: false,
       streamingText: "",
-      isBuilding: false,
-      buildingLogs: [],
       _abortController: null,
     });
 
@@ -155,7 +148,6 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
       const detail = await getConversation(id);
       const msgs = detail.messages;
 
-      // 1. Restaurer le dernier provider/model utilisé dans cette conversation
       let lastProvider = get().selectedProvider;
       let lastModel = get().selectedModel;
       for (let i = msgs.length - 1; i >= 0; i--) {
@@ -167,52 +159,32 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
         }
       }
 
-      // 2. Reconstruire fileReady depuis les tags <!--boulga-file:{...}--> embarqués en DB
-      //    et appliquer le préfixe /backend aux URLs /api/ (identique à onFileReady)
-      // Le JSON embarqué dans le tag est compact (json.dumps sans indent) — pas de /s nécessaire
-      const FILE_TAG_RE = /<!--boulga-file:(\{.*?\})-->/;
+      // Restaurer les fichiers générés depuis les tags <!--file:{...}-->
+      const FILE_TAG_RE = /<!--file:(\{.*?\})-->/;
+      const docState = useDocStore.getState();
       const parsedMsgs = msgs.map((msg) => {
         if (msg.role !== "assistant" || !msg.content) return msg;
         const match = FILE_TAG_RE.exec(msg.content);
         if (!match) return msg;
         try {
-          const fileData = JSON.parse(match[1]);
-          const cleanContent = msg.content.replace(FILE_TAG_RE, "").trimEnd();
-          const rawUrl = (fileData.url as string) ?? "";
-          const url = rawUrl.startsWith("/api/") ? `/backend${rawUrl}` : rawUrl;
-          return {
-            ...msg,
-            content: cleanContent,
-            fileReady: {
+          const f = JSON.parse(match[1]);
+          const url = `${API_URL}/api/files/${f.id}/download`;
+          if (!docState.artifacts.some((a) => a.id === f.id)) {
+            docState.addArtifact({
+              id: f.id,
+              messageId: msg.id,
+              name: f.name,
               url,
-              name:     (fileData.name    as string) ?? "",
-              size:     (fileData.size    as number) ?? 0,
-              mimeType: fileData.mimeType as string | undefined,
-              summary:  fileData.summary  as string | undefined,
-            },
-          };
+              mimeType: f.mime,
+              size: f.size,
+              createdAt: Date.now(),
+            });
+          }
+          return { ...msg, content: msg.content.replace(FILE_TAG_RE, "").trimEnd() };
         } catch {
           return msg;
         }
       });
-
-      // 3. Ajouter les fichiers restaurés au docStore (pour que le bouton "Ouvrir" fonctionne)
-      const docState = useDocStore.getState();
-      for (const msg of parsedMsgs) {
-        if (!msg.fileReady) continue;
-        const { url, name, size, mimeType } = msg.fileReady;
-        // Éviter les doublons si la conversation est rechargée plusieurs fois
-        if (!docState.artifacts.some((a) => a.url === url)) {
-          docState.addArtifact({
-            id: `artifact-restored-${name}-${size}`,
-            name,
-            url,
-            mimeType: mimeType ?? "application/octet-stream",
-            size,
-            createdAt: Date.now(),
-          });
-        }
-      }
 
       set({
         currentConversationId: id,
@@ -238,7 +210,6 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
 
     if (isStreaming) return;
 
-    // Bulle utilisateur optimiste
     const now = new Date().toISOString();
     const optimisticUserId = `optimistic-user-${Date.now()}`;
     const optimisticAssistantId = `optimistic-assistant-${Date.now()}`;
@@ -286,7 +257,6 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
       {
         onConversation: (id, isNew) => {
           set((s) => {
-            // Mettre à jour l'id de la conv courante
             const updatedMessages = s.messages.map((m) =>
               m.conversation_id === "" ? { ...m, conversation_id: id } : m,
             );
@@ -316,6 +286,18 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
           }));
         },
 
+        onFileReady: (info) => {
+          useDocStore.getState().addArtifact({
+            id: info.file_id,
+            messageId: info.message_id,
+            name: info.filename,
+            url: info.url.startsWith("/api/") ? `${API_URL}${info.url}` : info.url,
+            mimeType: info.mime_type,
+            size: info.size,
+            createdAt: Date.now(),
+          });
+        },
+
         onImageNotSupported: (_provider, message) => {
           useToastStore.getState().addToast({
             type:    "info",
@@ -324,84 +306,8 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
           });
         },
 
-        onFileBuildingStep: (step: string) => {
-          set((s) => ({
-            isBuilding: true,
-            buildingLogs: [...s.buildingLogs, step],
-          }));
-        },
-
-        onFileGenerationError: (message) => {
-          set({ isBuilding: false, buildingLogs: [] });
-          useToastStore.getState().addToast({
-            type:    "warning",
-            title:   "Fichier non généré",
-            message,
-          });
-        },
-
-        onFileReady: (url, name, mimeType, sizeBytes, isImage, summary) => {
-          // Fin de la construction — reset building state
-          set({ isBuilding: false, buildingLogs: [] });
-
-          // URL directe (Supabase signée) ou fallback proxy backend
-          const fullUrl = url.startsWith("/api/") ? `/backend${url}` : url;
-
-          // Créer l'artifact et l'ajouter au store (ouvre le panel automatiquement)
-          useDocStore.getState().addArtifact({
-            id: `artifact-${Date.now()}`,
-            name,
-            url: fullUrl,
-            mimeType,
-            size: sizeBytes,
-            createdAt: Date.now(),
-          });
-
-          if (isImage) {
-            // Injecter aussi l'image inline dans la bulle pour contexte visuel
-            set((s) => {
-              const messages = [...s.messages];
-              for (let i = messages.length - 1; i >= 0; i--) {
-                if (messages[i].role === "assistant") {
-                  const current = messages[i].content ?? "";
-                  messages[i] = {
-                    ...messages[i],
-                    content: current + `\n\n![Image générée](${fullUrl})`,
-                  };
-                  break;
-                }
-              }
-              return { messages };
-            });
-            set((s) => ({
-              streamingText: s.streamingText + `\n\n![Image générée](${fullUrl})`,
-            }));
-          }
-
-          // Stocker fileReady sur le message pour la artifact card dans la bulle
-          set((s) => {
-            const messages = [...s.messages];
-            for (let i = messages.length - 1; i >= 0; i--) {
-              if (messages[i].role === "assistant") {
-                messages[i] = { ...messages[i], fileReady: { url: fullUrl, name, size: sizeBytes, mimeType, summary } };
-                break;
-              }
-            }
-            return { messages };
-          });
-
-          useToastStore.getState().addToast({
-            type:    "info",
-            title:   isImage ? "Image générée" : "Fichier prêt",
-            message: name,
-          });
-        },
-
         onDone: (messageId) => {
-          // Filet de sécurité : supprimer tout tag <!--boulga-file:--> que le LLM
-          // aurait pu générer (ne devrait plus arriver après le fix backend)
-          const FILE_TAG_RE = /<!--boulga-file:\{.*?\}-->/g;
-          const finalText = get().streamingText.replace(FILE_TAG_RE, "").trimEnd();
+          const finalText = get().streamingText.replace(_FILE_TAG_RE, "").trimEnd();
           set((s) => ({
             messages: s.messages.map((m) =>
               m.id === optimisticAssistantId
@@ -410,14 +316,9 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
             ),
             isStreaming: false,
             streamingText: "",
-            isBuilding: false,
-            buildingLogs: [],
             _abortController: null,
           }));
 
-          // Ouvrir le panneau document si la réponse est longue,
-          // MAIS seulement si aucun artifact n'a été généré dans ce message
-          // (l'artifact ouvre déjà le panel, on ne veut pas l'écraser)
           if (countWords(finalText) > LONG_RESPONSE_WORDS) {
             const docState = useDocStore.getState();
             if (docState.currentArtifactIndex === null) {
@@ -430,9 +331,7 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
             }
           }
 
-          // Rafraîchir la liste des conversations (titre potentiellement mis à jour)
           get().loadConversations();
-          // Rafraîchir le quota affiché
           useSubscriptionStore.getState().loadSubscription();
         },
 
@@ -443,8 +342,6 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
             ),
             isStreaming: false,
             streamingText: "",
-            isBuilding: false,
-            buildingLogs: [],
             _abortController: null,
           }));
 
@@ -485,7 +382,6 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
     const assistantIdx = messages.findIndex((m) => m.id === assistantMessageId);
     if (assistantIdx < 0) return;
 
-    // Message utilisateur précédant cette bulle
     let userMsg: Message | undefined;
     for (let i = assistantIdx - 1; i >= 0; i--) {
       if (messages[i].role === "user") { userMsg = messages[i]; break; }
@@ -495,7 +391,6 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
     const regenId = `optimistic-regen-${Date.now()}`;
     const now = new Date().toISOString();
 
-    // Remplacer la bulle assistant par une bulle vide
     set((s) => ({
       messages: [
         ...s.messages.slice(0, assistantIdx),
@@ -522,7 +417,17 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
         onConversation: () => {},
         onChunk: (chunk) => set((s) => ({ streamingText: s.streamingText + chunk })),
         onTitle: () => {},
-        onFileReady: () => {},
+        onFileReady: (info) => {
+          useDocStore.getState().addArtifact({
+            id: info.file_id,
+            messageId: info.message_id,
+            name: info.filename,
+            url: info.url.startsWith("/api/") ? `${API_URL}${info.url}` : info.url,
+            mimeType: info.mime_type,
+            size: info.size,
+            createdAt: Date.now(),
+          });
+        },
         onDone: (messageId) => {
           const finalText = get().streamingText;
           set((s) => ({
@@ -533,7 +438,6 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
             streamingText: "",
             _abortController: null,
           }));
-          // Mettre à jour le panneau document si la réponse régénérée est longue
           if (countWords(finalText) > LONG_RESPONSE_WORDS) {
             useDocStore.getState().updateDocument(finalText);
           }
@@ -558,7 +462,6 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
     if (_abortController) {
       _abortController.abort();
     }
-    // Finaliser la bulle assistant avec le texte partiel déjà reçu
     set((s) => ({
       messages: s.messages.map((m) =>
         m.role === "assistant" && m.content === ""

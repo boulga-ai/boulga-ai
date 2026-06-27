@@ -1,31 +1,26 @@
-"""chat_service.py — Service de chat principal.
+"""chat_service.py — Service de chat principal (streaming + génération de documents)."""
 
-Le LLM décide seul, via tool calling, quand générer un fichier.
-Aucune détection d'intent par regex ou mots-clés côté service.
-"""
-
-import json as _json
 import logging
-import re as _re
+import re as _re_svc
 from typing import AsyncIterator, Optional
 from uuid import UUID
+
+# Supprime les balises fichiers des messages avant envoi au LLM
+_FILE_TAG_STRIP = _re_svc.compile(r"\n?<!--file:\{.*?\}-->", _re_svc.DOTALL)
 
 logger = logging.getLogger(__name__)
 
 from app.db.repositories.conversation_repository import ConversationRepository
 from app.db.repositories.message_repository import MessageRepository
 from app.db.session import get_supabase
-from app.manager.llm_manager import CREATE_DOCUMENT_TOOL, llm_manager
+from app.manager.llm_manager import GENERATE_DOCUMENT_TOOL, llm_manager
 from app.manager.router_agent import router_agent
 from app.prompts.chat_prompts import TITLE_GENERATION_PROMPT
 from app.prompts.tool_prompts import get_full_system_prompt
 from app.services.quota_service import QuotaService
 from app.services.subscription_service import SubscriptionService
 
-# Tiers autorisés à utiliser le Routage Automatique (Source+)
 _ROUTING_TIERS: set[str] = {"source", "fleuve", "ocean"}
-
-# ── Constantes ───────────────────────────────────────────────────────────────
 
 MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     "gemini-2.5-flash":  1_000_000,
@@ -47,8 +42,6 @@ _RECENT_KEEP  = 10
 def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
-
-# ── Service ──────────────────────────────────────────────────────────────────
 
 class ChatService:
     def __init__(self) -> None:
@@ -189,7 +182,7 @@ class ChatService:
             except Exception:
                 pass
 
-        # e. Enregistrer message user
+        # d. Enregistrer message user
         self._msg_repo.create({
             "conversation_id": conversation_id,
             "role":    "user",
@@ -198,38 +191,16 @@ class ChatService:
             "model_id": model_id,
         })
 
-        # f. Préparer contexte
+        # e. Préparer contexte
         history         = self._msg_repo.list_by_conversation(UUID(conversation_id))
         text_context, binary_files = self._prepare_files(file_ids, provider)
         system_prompt   = get_full_system_prompt(tool_slug)
         history_for_llm = await self._prepare_history(history, model_id)
 
-        # Injecter la grammaire de composition JSON uniquement quand create_document
-        # est disponible — pas lors d'un chat sans outils (économie de tokens).
-        from app.skills import load_document_skill
-        _doc_skill = load_document_skill()
-        if _doc_skill:
-            system_prompt = system_prompt + "\n\n---\n" + _doc_skill
-
-        # Remplacer les tags <!--boulga-file:...--> par un placeholder lisible
-        # pour que le LLM garde le contexte de ce qu'il a généré.
-        _file_tag_re = _re.compile(r'<!--boulga-file:(\{.*?\})-->', _re.DOTALL)
-
-        def _tag_to_context(match: _re.Match) -> str:
-            try:
-                data = _json.loads(match.group(1))
-                name = data.get("name", "fichier")
-                summary = data.get("summary", "")
-                if summary:
-                    return f"\n[Fichier généré : {name} — {summary}]"
-                return f"\n[Fichier généré : {name}]"
-            except Exception:
-                return "\n[Fichier généré]"
-
         llm_messages = [
             {
                 "role": "model" if m.get("role") == "assistant" else m.get("role", "user"),
-                "content": _file_tag_re.sub(_tag_to_context, m.get("content", "")).strip(),
+                "content": _FILE_TAG_STRIP.sub("", m.get("content", "")).strip(),
             }
             for m in history_for_llm
         ]
@@ -245,30 +216,25 @@ class ChatService:
 
         files_arg = binary_files if binary_files else None
 
-        # g. Appel LLM — streaming avec outils (tool_choice="auto")
-        # Texte streamé token par token, tool_call accumulé jusqu'à la fin du stream.
+        # f. Appel LLM — streaming avec tools
         full_response = ""
-        tool_call_result: dict | None = None
+        tool_call_event: dict | None = None
 
         try:
-            async for event in llm_manager.stream_with_tools(
+            async for event in llm_manager.stream_chat_with_tools(
                 provider=provider,
                 model_id=model_id,
                 messages=llm_messages,
                 system_prompt=system_prompt,
                 files=files_arg,
-                tools=[CREATE_DOCUMENT_TOOL],
                 effort=effort,
+                tools=[GENERATE_DOCUMENT_TOOL],
             ):
-                if event["type"] == "chunk":
+                if event["type"] == "text":
                     full_response += event["text"]
                     yield {"type": "chunk", "text": event["text"]}
-                elif event["type"] == "tool_started":
-                    yield {"type": "file_building", "step": "⚙️ Génération du document en cours…"}
-                elif event["type"] == "tool_progress":
-                    yield {"type": "file_building", "step": "⚙️ Composition en cours…"}
                 elif event["type"] == "tool_call":
-                    tool_call_result = event
+                    tool_call_event = event
 
         except Exception as exc:
             raw = getattr(exc, "message", str(exc))
@@ -280,6 +246,13 @@ class ChatService:
             yield {"type": "error", "message": msg}
             return
 
+        # g. Si le LLM n'a envoyé aucun texte mais a appelé un tool, générer un message
+        if not full_response.strip() and tool_call_event:
+            filename = tool_call_event.get("arguments", {}).get("filename", "document")
+            fallback = f"Je génère le document **{filename}** pour vous..."
+            full_response = fallback
+            yield {"type": "chunk", "text": fallback}
+
         # h. Enregistrer réponse assistant
         assistant_msg = self._msg_repo.create({
             "conversation_id": conversation_id,
@@ -289,25 +262,24 @@ class ChatService:
             "model_id": model_id,
         })
 
-        # i. Quota message
+        # i. Génération de document si tool_call
+        if tool_call_event and tool_call_event.get("name") == "generate_document":
+            async for file_event in self._handle_document_generation(
+                tool_call_event["arguments"],
+                user_id=user_id,
+                conversation_id=conversation_id,
+                message_id=assistant_msg["id"],
+            ):
+                yield file_event
+
+        # i. Quota
         try:
             await self._quota_svc.consume_message(user_id)
             await self._quota_svc.consume_tokens(user_id, _estimate_tokens(full_response))
         except Exception:
             pass
 
-        # j. Génération de fichier — deux chemins selon l'outil appelé
-        if tool_call_result and tool_call_result.get("name") == "create_document":
-            msg_id = assistant_msg["id"] if assistant_msg else None
-            async for event in self._handle_document_creation(
-                tool_call_result["arguments"],
-                user_id=user_id,
-                conversation_id=conversation_id,
-                message_id=msg_id,
-            ):
-                yield event
-
-        # k. Titre si nouvelle conversation
+        # j. Titre si nouvelle conversation
         if is_new:
             try:
                 title_prompt = TITLE_GENERATION_PROMPT.format(message=message[:300])
@@ -322,286 +294,48 @@ class ChatService:
             except Exception:
                 pass
 
-        # m. Done
+        # k. Done
         yield {"type": "done", "message_id": assistant_msg["id"]}
 
-    # ── Persistance metadata fichier dans le message ──────────────────
+    # ── Génération de document ────────────────────────────────────────
 
-    def _embed_file_tag(
-        self,
-        message_id: str | None,
-        url: str,
-        name: str,
-        size: int,
-        mime_type: str,
-        summary: str = "",
-    ) -> None:
-        """
-        Appende un tag JSON caché dans le contenu du message en DB.
-        Permet de reconstruire fileReady au rechargement de la conversation.
-        Format : <!--boulga-file:{...}-->
-        """
-        if not message_id:
-            return
-        try:
-            from uuid import UUID as _UUID
-            tag = "<!--boulga-file:" + _json.dumps({
-                "url":      url,
-                "name":     name,
-                "size":     size,
-                "mimeType": mime_type,
-                "summary":  summary,
-            }) + "-->"
-            msg = self._msg_repo.get_by_id(_UUID(message_id))
-            if msg:
-                new_content = (msg.get("content") or "") + tag
-                self._msg_repo.update_content(message_id, new_content)
-        except Exception:
-            logger.error("Échec _embed_file_tag pour message_id=%s", message_id, exc_info=True)
-
-    # ── Rendu de document via JSON de blocs (create_document) ─────────
-
-    async def _handle_document_creation(
+    async def _handle_document_generation(
         self,
         arguments: dict,
         user_id: str,
-        conversation_id: str | None,
-        message_id: str | None,
-    ):
-        """
-        Convertit le JSON de blocs produit par le LLM en fichier docx ou pdf,
-        sans aucun deuxième appel LLM ni exécution de code Python.
-
-        Flux :
-          1. Valide quota fichier
-          2. Appelle render_document(fmt, doc_dict) → (bytes, mime)
-          3. Stocke le fichier, embed le tag <!--boulga-file-->
-          4. Yield file_ready
-        """
-        from app.documents import render_document
+        conversation_id: str,
+        message_id: str,
+    ) -> AsyncIterator[dict]:
+        from app.services.document_renderer import render_document
         from app.services.file_service import FileService
 
         if not await self._quota_svc.is_file_allowed(user_id):
-            yield {
-                "type":    "file_generation_error",
-                "message": "Limite de fichiers atteinte. Passez à un plan supérieur.",
-            }
+            yield {"type": "error", "message": "file_quota_exceeded"}
             return
+
+        import asyncio as _asyncio
 
         fmt      = arguments.get("format", "docx")
-        filename = arguments.get("filename", f"document.{fmt}")
-        summary  = arguments.get("summary", "")
-        doc_data = arguments.get("document", {})
-
-        yield {"type": "file_building", "step": f"⚙️ Rendu du document {fmt.upper()}…"}
-
-        try:
-            file_bytes, mime_type = render_document(fmt, doc_data)
-        except Exception as exc:
-            yield {"type": "file_generation_error", "message": f"Erreur de rendu : {exc}"}
-            return
-
-        try:
-            file_svc = FileService()
-            record = file_svc.store_generated_file(
-                user_id=user_id,
-                filename=filename,
-                content=file_bytes,
-                mime_type=mime_type,
-                conversation_id=conversation_id,
-                message_id=message_id,
-            )
-            await self._quota_svc.consume_file(user_id)
-        except Exception as store_err:
-            yield {
-                "type":    "file_generation_error",
-                "message": f"Erreur stockage fichier : {store_err}",
-            }
-            return
-
-        display_url = f"/api/files/{record['id']}/download"
-        self._embed_file_tag(
-            message_id=message_id,
-            url=display_url,
-            name=filename,
-            size=len(file_bytes),
-            mime_type=mime_type,
-            summary=summary,
-        )
-
-        yield {
-            "type":       "file_ready",
-            "file_id":    record["id"],
-            "filename":   filename,
-            "mime_type":  mime_type,
-            "size_bytes": len(file_bytes),
-            "url":        record.get("signed_url") or display_url,
-            "is_image":   False,
-            "summary":    summary,
+        raw_name = arguments.get("filename", "document")
+        blocks   = arguments.get("blocks", [])
+        template = arguments.get("template", "minimal")
+        options  = {
+            k: arguments[k]
+            for k in ("primary_color", "company_name")
+            if arguments.get(k)
         }
 
-    # ── Génération de fichier depuis tool_call ─────────────────────────
+        safe_name = raw_name.strip().replace("/", "-").replace("\\", "-")[:80]
+        filename  = f"{safe_name}.{fmt}"
 
-    async def _handle_file_creation(
-        self,
-        arguments: dict,
-        user_id: str,
-        conversation_id: str | None,
-        message_id: str | None,
-        provider: str,
-        model_id: str,
-    ) -> AsyncIterator[dict]:
-        """
-        Génère le fichier en deux phases avec boucle de correction (max 3 tentatives) :
-        - Phase 2 : charge le SKILL.md du format → appel LLM → code Python.
-        - Phase 3 : exécute le code en subprocess isolé (os.chdir(tmpdir) déjà fait).
-        Si le code plante ou ne produit pas de fichier valide, l'erreur est renvoyée
-        au LLM qui corrige et réessaie. Maximum _MAX_ATTEMPTS tentatives.
-        """
-        from pathlib import Path as _Path
-        from app.services.code_executor import CodeExecutor
-        from app.services.file_service import FileService
-        from app.skills import load_skill
-
-        _MAX_ATTEMPTS = 3
-
-        if not await self._quota_svc.is_file_allowed(user_id):
-            yield {
-                "type":    "file_generation_error",
-                "message": "Limite de fichiers atteinte. Passez à un plan supérieur.",
-            }
+        try:
+            file_bytes, mime_type = await _asyncio.to_thread(
+                render_document, blocks, fmt, template, options or None
+            )
+        except Exception as exc:
+            logger.error("Document render failed: %s", exc)
             return
 
-        fmt      = arguments.get("format", "txt")
-        filename = arguments.get("filename", f"document.{fmt}")
-        summary  = arguments.get("summary", "")
-
-        # ── System prompt pour la génération de code ──
-        skill = load_skill(fmt)
-        system_for_code = (
-            (skill + "\n\n---\n") if skill else
-            "Tu es un générateur de code Python pour créer des fichiers bureautiques.\n"
-        ) + (
-            "Génère uniquement du code Python, sans markdown, sans explication, sans balises ```.\n"
-            f"Sauvegarde le fichier avec ce nom exact : `{filename}` "
-            f"(ex: doc.save('{filename}')). Le répertoire de travail est déjà positionné.\n"
-            "Utilise print() à chaque étape clé pour montrer l'avancement."
-        )
-
-        def _clean(raw: str) -> str:
-            s = _re.sub(r'^```(?:python)?\n?', '', raw.strip(), flags=_re.MULTILINE)
-            return _re.sub(r'\n?```$', '', s.strip(), flags=_re.MULTILINE).strip()
-
-        executor   = CodeExecutor()
-        last_error: str | None = None
-        last_code: str | None = None
-        file_bytes: bytes | None = None
-        mime_type:  str   | None = None
-
-        for attempt in range(1, _MAX_ATTEMPTS + 1):
-
-            # ── Phase 2 : génération / correction du code ──
-            if attempt == 1:
-                yield {"type": "file_building", "step": f"⚙️ Génération du code {fmt.upper()}..."}
-                prompt = (
-                    f"Génère le code Python pour créer ce fichier {fmt.upper()} "
-                    f"nommé '{filename}'.\n"
-                    f"Sauvegarde le fichier sous ce nom exact : `{filename}`.\n"
-                    f"Contenu attendu : {summary}"
-                )
-            else:
-                yield {"type": "file_building", "step": f"🔧 Correction en cours (tentative {attempt}/{_MAX_ATTEMPTS})..."}
-                prompt = (
-                    f"Le code précédent pour générer '{filename}' a échoué.\n"
-                    f"Voici le code complet qui a échoué :\n```python\n{last_code or ''}\n```\n"
-                    f"Traceback / message d'erreur complet :\n{last_error or 'Aucune sortie fournie.'}\n\n"
-                    f"Le code ci-dessus a produit cette erreur. Corrige le code et renvoie la version corrigée complète via create_file. "
-                    f"Ne reproduis pas la même erreur.\n"
-                    f"Génère le code Python corrigé pour créer ce fichier {fmt.upper()} "
-                    f"nommé '{filename}'.\n"
-                    f"Sauvegarde le fichier sous ce nom exact : `{filename}`.\n"
-                    f"Contenu : {summary}"
-                )
-            code_max_tokens = {
-                "gemini-2.5-flash":  16384,
-                "gemini-2.5-pro":    16384,
-                "claude-haiku-4-5":  8192,
-                "claude-sonnet-4-6": 16384,
-                "claude-opus-4-6":   16384,
-                "gpt-5.5-instant":   16384,
-                "gpt-5.5-pro":       16384,
-                "deepseek-v4-flash": 16384,
-                "deepseek-v4-pro":   16384,
-            }.get(model_id, 8192)
-
-            try:
-                raw_code = await llm_manager.generate_text(
-                    provider=provider,
-                    model_id=model_id,
-                    prompt=prompt,
-                    system_prompt=system_for_code,
-                    max_tokens=code_max_tokens,
-                    log_finish_reason=True,
-                )
-            except Exception as exc:
-                yield {"type": "file_generation_error", "message": f"Erreur LLM : {exc}"}
-                return
-
-            last_code = _clean(raw_code)
-            code = last_code
-            if not code:
-                last_error = "Code vide retourné par le LLM."
-                continue
-
-            # ── Phase 3 : exécution du code ──
-            # os.chdir(tmpdir) est injecté par CodeExecutor — aucune variable magique nécessaire.
-            logs: list[str] = []
-            file_bytes = None
-            mime_type  = None
-            exec_error: str | None = None
-
-            async for event in executor.execute_streaming(code, timeout=90.0):
-                if event["type"] == "log":
-                    logs.append(event["line"])
-                    yield {"type": "file_building", "step": event["line"]}
-                elif event["type"] == "done":
-                    # Validation : bonne extension + taille > 0
-                    expected_ext = f".{fmt}"
-                    valid = [
-                        f for f in event.get("files", [])
-                        if _Path(f["filename"]).suffix.lower() == expected_ext
-                        and len(f["content"]) > 0
-                    ]
-                    if valid:
-                        file_bytes = valid[0]["content"]
-                        mime_type  = valid[0]["mime_type"]
-                    elif event.get("files"):
-                        # Fichier produit mais mauvaise extension — on l'accepte quand même
-                        first = event["files"][0]
-                        if len(first["content"]) > 0:
-                            file_bytes = first["content"]
-                            mime_type  = first["mime_type"]
-                        else:
-                            exec_error = "Fichier produit vide (taille 0)."
-                    else:
-                        exec_error = f"Aucun fichier .{fmt} produit par le script."
-                elif event["type"] == "error":
-                    exec_error = event["message"]
-
-            if file_bytes is not None and mime_type is not None:
-                break  # succès — sortir de la boucle de correction
-
-            last_error = "\n".join(logs[-40:]) + (f"\nErreur : {exec_error}" if exec_error else "\nAucun fichier produit.")
-
-        else:
-            # Toutes les tentatives ont échoué
-            yield {
-                "type":    "file_generation_error",
-                "message": f"Échec après {_MAX_ATTEMPTS} tentatives.\n{last_error or ''}",
-            }
-            return
-
-        # ── Stockage et réponse ──
         try:
             file_svc = FileService()
             record = file_svc.store_generated_file(
@@ -613,30 +347,34 @@ class ChatService:
                 message_id=message_id,
             )
             await self._quota_svc.consume_file(user_id)
-        except Exception as store_err:
-            yield {
-                "type":    "file_generation_error",
-                "message": f"Erreur stockage fichier : {store_err}",
-            }
+        except Exception as exc:
+            logger.error("File storage failed: %s", exc)
             return
 
-        display_url = f"/api/files/{record['id']}/download"
-        self._embed_file_tag(
-            message_id=message_id,
-            url=display_url,
-            name=filename,
-            size=len(file_bytes),
-            mime_type=mime_type,
-            summary=summary,
-        )
+        file_id = record["id"]
+        download_url = record.get("signed_url") or f"/api/files/{file_id}/download"
+
+        # Persister la référence fichier dans le message pour restauration au reload
+        try:
+            import json as _json
+            from uuid import UUID as _UUID
+            msg = self._msg_repo.get_by_id(_UUID(message_id))
+            if msg:
+                tag_data = _json.dumps({
+                    "id": file_id, "name": filename,
+                    "mime": mime_type, "size": len(file_bytes),
+                }, ensure_ascii=False)
+                tag = f"\n<!--file:{tag_data}-->"
+                self._msg_repo.update_content(message_id, (msg.get("content") or "") + tag)
+        except Exception:
+            pass
 
         yield {
             "type":       "file_ready",
-            "file_id":    record["id"],
+            "file_id":    file_id,
             "filename":   filename,
             "mime_type":  mime_type,
-            "size_bytes": len(file_bytes),
-            "url":        record.get("signed_url") or display_url,
-            "is_image":   False,
-            "summary":    summary,
+            "size":       len(file_bytes),
+            "url":        download_url,
+            "message_id": message_id,
         }

@@ -94,13 +94,6 @@ export interface Message {
   model_id?: string;
   file_ids: string[];
   created_at: string;
-  fileReady?: {
-    url: string;
-    name: string;
-    size: number;
-    mimeType?: string;
-    summary?: string;
-  };
 }
 
 // ============================================================

@@ -8,14 +8,6 @@ export interface DocumentState {
   versions: string[]; // versions précédentes (index 0 = la plus ancienne)
 }
 
-export interface FileReady {
-  url: string;
-  name: string;
-  format: string; // extension : "docx", "xlsx", "pdf", "png"…
-  size: number;
-  mimeType?: string;
-}
-
 /** Un artifact = fichier généré par le LLM, lié à un message */
 export interface Artifact {
   id: string;          // file_id backend
@@ -31,7 +23,6 @@ export interface Artifact {
 
 interface DocStoreState {
   currentDocument: DocumentState | null;
-  fileReady: FileReady | null;
   viewingVersionIndex: number | null;
   /** Liste de tous les artifacts générés dans la session */
   artifacts: Artifact[];
@@ -44,8 +35,6 @@ interface DocStoreState {
 interface DocStoreActions {
   openDocument: (content: string, format?: string) => void;
   updateDocument: (content: string) => void;
-  setFileReady: (info: FileReady) => void;
-  clearFileReady: () => void;
   closeDocument: () => void;
   goToVersion: (index: number) => void;
   /** Ajoute un artifact et l'ouvre dans le panel */
@@ -62,7 +51,6 @@ interface DocStoreActions {
 
 export const useDocStore = create<DocStoreState & DocStoreActions>((set, get) => ({
   currentDocument: null,
-  fileReady: null,
   viewingVersionIndex: null,
   artifacts: [],
   currentArtifactIndex: null,
@@ -97,22 +85,9 @@ export const useDocStore = create<DocStoreState & DocStoreActions>((set, get) =>
     });
   },
 
-  setFileReady: (info: FileReady) => {
-    set({ fileReady: info });
-  },
-
-  clearFileReady: () => {
-    set({ fileReady: null });
-    const { currentDocument } = get();
-    if (currentDocument?.format === "file") {
-      set({ currentDocument: null, viewingVersionIndex: null });
-    }
-  },
-
   closeDocument: () => {
     set({
       currentDocument: null,
-      fileReady: null,
       viewingVersionIndex: null,
       currentArtifactIndex: null,
       panelOpen: false,

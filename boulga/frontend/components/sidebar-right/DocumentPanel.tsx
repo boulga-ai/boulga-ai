@@ -28,8 +28,10 @@ function downloadBlob(blob: Blob, filename: string) {
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 100);
 }
 
 const MIME_META: Record<string, { label: string; color: string; bg: string; Icon: React.ComponentType<{ size?: number | string; className?: string }> }> = {

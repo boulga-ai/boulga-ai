@@ -21,25 +21,28 @@ export interface RoutingInfo {
   reason: string;
 }
 
+export interface FileReadyInfo {
+  file_id: string;
+  filename: string;
+  mime_type: string;
+  size: number;
+  url: string;
+  message_id: string;
+}
+
 export interface StreamHandlers {
   onConversation: (id: string, isNew: boolean) => void;
   onRouting?: (info: RoutingInfo) => void;
   onChunk: (text: string) => void;
   onTitle: (title: string) => void;
-  onFileReady: (url: string, name: string, format: string, size: number, isImage: boolean, summary?: string) => void;
-  onFileBuildingStep?: (step: string) => void;
+  onFileReady?: (info: FileReadyInfo) => void;
   onImageNotSupported?: (provider: string, message: string) => void;
-  onFileGenerationError?: (message: string) => void;
   onDone: (messageId: string) => void;
   onError: (message: string) => void;
 }
 
 // ── streamChat ────────────────────────────────────────────────────────────────
 
-/**
- * Ouvre un flux SSE vers POST /api/chat.
- * Retourne un AbortController pour permettre l'interruption via abort().
- */
 export function streamChat(
   payload: ChatPayload,
   handlers: StreamHandlers,
@@ -51,7 +54,6 @@ export function streamChat(
     try {
       res = await fetch(`${API_URL}/api/chat`, {
         method: "POST",
-        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           ...(getStoredToken() ? { Authorization: `Bearer ${getStoredToken()}` } : {}),
@@ -93,9 +95,7 @@ export function streamChat(
 
         buffer += decoder.decode(value, { stream: true });
 
-        // Découper par lignes complètes
         const lines = buffer.split("\n");
-        // La dernière ligne peut être incomplète → la conserver dans le buffer
         buffer = lines.pop() ?? "";
 
         for (const line of lines) {
@@ -109,7 +109,7 @@ export function streamChat(
           try {
             event = JSON.parse(jsonStr);
           } catch {
-            continue; // ligne malformée, on ignore
+            continue;
           }
 
           const type = event.type as string;
@@ -135,26 +135,20 @@ export function streamChat(
               handlers.onTitle(event.title as string);
               break;
             case "file_ready":
-              handlers.onFileReady(
-                event.url as string,
-                event.filename as string,
-                event.mime_type as string,
-                event.size_bytes as number,
-                Boolean(event.is_image),
-                event.summary as string | undefined,
-              );
+              handlers.onFileReady?.({
+                file_id: event.file_id as string,
+                filename: event.filename as string,
+                mime_type: event.mime_type as string,
+                size: event.size as number,
+                url: event.url as string,
+                message_id: event.message_id as string,
+              });
               break;
             case "image_not_supported":
               handlers.onImageNotSupported?.(
                 event.provider as string,
                 event.message as string,
               );
-              break;
-            case "file_building":
-              handlers.onFileBuildingStep?.(event.step as string);
-              break;
-            case "file_generation_error":
-              handlers.onFileGenerationError?.(event.message as string);
               break;
             case "done":
               handlers.onDone(event.message_id as string);
@@ -204,7 +198,6 @@ export function streamCompare(
     try {
       res = await fetch(`${API_URL}/api/compare`, {
         method: "POST",
-        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           ...(getStoredToken() ? { Authorization: `Bearer ${getStoredToken()}` } : {}),

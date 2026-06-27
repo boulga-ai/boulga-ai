@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { API_URL } from "@/lib/constants";
 import type { User } from "@/types";
 
 const TOKEN_KEY = "boulga_token";
@@ -43,7 +44,6 @@ export const useAuthStore = create<AuthState & AuthActions>((set) => ({
     const token = getStoredToken();
     if (!token) return;
     try {
-      const { API_URL } = await import("@/lib/constants");
       const res = await fetch(`${API_URL}/api/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });

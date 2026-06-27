@@ -12,44 +12,37 @@ from app.manager.registry import is_provider_active, resolve_model
 
 logger = logging.getLogger(__name__)
 
-# Mapping Boulga model_id → identifiant OpenRouter
 _OPENROUTER_MODELS: dict[str, str] = {
-    # Gemini (Google)
     "gemini-2.5-flash":  "google/gemini-2.5-flash",
     "gemini-2.5-pro":    "google/gemini-2.5-pro",
-    # Claude (Anthropic) — OpenRouter utilise des points dans le numéro de version
     "claude-haiku-4-5":  "anthropic/claude-haiku-4.5",
     "claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
     "claude-opus-4-6":   "anthropic/claude-opus-4.6",
-    # ChatGPT (OpenAI)
     "gpt-5.5-instant":   "openai/gpt-5.5",
     "gpt-5.5-pro":       "openai/gpt-5.5-pro",
-    # DeepSeek
     "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
     "deepseek-v4-pro":   "deepseek/deepseek-v4-pro",
 }
 
-# En-têtes requis par OpenRouter
 _OR_HEADERS: dict[str, str] = {
     "HTTP-Referer": "https://boulga.ai",
     "X-Title": "Boulga",
 }
 
-# Mapping effort → température
 _OR_TEMPERATURE: dict[str, float] = {
     "low": 0.2, "medium": 0.5, "high": 0.8, "max": 1.0,
 }
 
 _MAX_OUTPUT_TOKENS: dict[str, int] = {
-    "gemini-2.5-flash":  65536,
-    "gemini-2.5-pro":    65536,
-    "claude-haiku-4-5":  65536,
-    "claude-sonnet-4-6": 65536,
-    "claude-opus-4-6":   65536,
-    "gpt-5.5-instant":   65536,
-    "gpt-5.5-pro":       65536,
-    "deepseek-v4-flash": 65536,
-    "deepseek-v4-pro":   65536,
+    "gemini-2.5-flash":  16384,
+    "gemini-2.5-pro":    16384,
+    "claude-haiku-4-5":  8192,
+    "claude-sonnet-4-6": 16384,
+    "claude-opus-4-6":   16384,
+    "gpt-5.5-instant":   8192,
+    "gpt-5.5-pro":       16384,
+    "deepseek-v4-flash": 16384,
+    "deepseek-v4-pro":   16384,
 }
 
 
@@ -93,142 +86,146 @@ async def _completion_with_fallback(kwargs: dict):
                     return await litellm.acompletion(**kwargs)
         raise
 
-# ── Tool create_file (schéma universel OpenRouter) ───────────────────────────
-#
-# Règles de compatibilité maximale (Gemini, Claude, GPT, DeepSeek) :
-#   - Toutes les propriétés dans required
-#   - additionalProperties: false sur les objets
-#
-# Phase 1 : le LLM signale l'intention et le format (sans code).
-# Phase 2 : _handle_file_creation charge le SKILL.md et génère le code via un second appel LLM.
-# Phase 3 : CodeExecutor exécute le code généré.
-#
-CREATE_FILE_TOOL: dict = {
+
+def _or_model(model_id: str) -> str:
+    name = _OPENROUTER_MODELS.get(model_id, model_id)
+    return f"openrouter/{name}"
+
+
+GENERATE_DOCUMENT_TOOL: dict = {
     "type": "function",
     "function": {
-        "name": "create_file",
+        "name": "generate_document",
         "description": (
-            "Génère un fichier téléchargeable quand l'utilisateur demande un document "
-            "(Word, Excel, PDF, PowerPoint, CSV, texte). "
-            "Appelle cet outil avec le format, le nom de fichier et un résumé du contenu attendu. "
-            "Le backend se charge de générer le fichier — tu n'as pas besoin d'écrire de code."
+            "Génère un fichier Word (DOCX) ou PDF structuré et mis en page. "
+            "Utilise cet outil quand l'utilisateur demande de créer, "
+            "générer ou exporter un document."
         ),
         "parameters": {
             "type": "object",
+            "required": ["format", "filename", "template", "blocks"],
             "additionalProperties": False,
-            "required": ["filename", "format", "summary"],
             "properties": {
-                "filename": {
-                    "type": "string",
-                    "description": "Nom du fichier avec extension (ex: rapport_ventes.xlsx)",
-                },
                 "format": {
                     "type": "string",
-                    "enum": ["docx", "xlsx", "pdf", "pptx", "csv", "txt"],
-                    "description": "Format du fichier",
-                },
-                "summary": {
-                    "type": "string",
+                    "enum": ["docx", "pdf", "xlsx"],
                     "description": (
-                        "Description précise du contenu attendu (2-5 phrases). "
-                        "Inclure : structure, données à mettre, style souhaité, langue. "
-                        "Ex: 'Rapport de ventes mensuel avec tableau des 5 meilleurs produits, "
-                        "graphique en barres, style professionnel bleu marine.'"
+                        "Format de sortie : "
+                        "docx (Word — le plus courant, mise en page riche) ; "
+                        "pdf (PDF — lecture, partage, impression) ; "
+                        "xlsx (Excel — données tabulaires, tableaux de bord, reporting chiffré)."
                     ),
                 },
-            },
-        },
-    },
-}
-
-CREATE_DOCUMENT_TOOL: dict = {
-    "type": "function",
-    "function": {
-        "name": "create_document",
-        "description": (
-            "Produit un document téléchargeable (Word ou PDF) quand l'utilisateur en a besoin. "
-            "Tu composes le document librement avec des blocs typés en JSON. "
-            "Appelle cet outil quand un document est pertinent."
-        ),
-        "parameters": {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["format", "filename", "summary", "document"],
-            "properties": {
-                "format": {
-                    "type": "string",
-                    "enum": ["docx", "pdf"],
-                    "description": "Format de sortie du document.",
-                },
                 "filename": {
                     "type": "string",
-                    "description": "Nom du fichier avec extension.",
+                    "description": "Nom du fichier sans extension (ex: rapport-marketing-q3).",
                 },
-                "summary": {
+                "template": {
                     "type": "string",
-                    "description": "Résumé court affiché à l'utilisateur.",
+                    "enum": ["commercial", "rapport", "contrat", "rh", "minimal"],
+                    "description": (
+                        "Template de mise en page : "
+                        "commercial (proposition, offre, devis, présentation client) ; "
+                        "rapport (analyse, audit, bilan, reporting chiffré) ; "
+                        "contrat (accord, convention, CGV, lettre formelle) ; "
+                        "rh (fiche de poste, contrat de travail, note interne) ; "
+                        "minimal (note simple, document court sans page de garde)."
+                    ),
                 },
-                "document": {
-                    "type": "object",
-                    "additionalProperties": True,
-                    "properties": {
-                        "title": {"type": "string"},
-                        "blocks": {
-                            "type": "array",
+                "primary_color": {
+                    "type": "string",
+                    "description": (
+                        "Couleur principale hex optionnelle (ex: #1565C0). "
+                        "Remplace la couleur primaire du template si fournie. "
+                        "À utiliser si l'utilisateur mentionne ses couleurs de marque."
+                    ),
+                },
+                "company_name": {
+                    "type": "string",
+                    "description": (
+                        "Nom de l'entreprise ou de l'organisation, "
+                        "affiché dans l'en-tête courant. Optionnel."
+                    ),
+                },
+                "blocks": {
+                    "type": "array",
+                    "description": "Liste ordonnée de blocs de contenu du document.",
+                    "items": {
+                        "type": "object",
+                        "required": ["type"],
+                        "additionalProperties": False,
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "cover_page",
+                                    "header_block",
+                                    "heading",
+                                    "paragraph",
+                                    "bullet_list",
+                                    "numbered_list",
+                                    "table",
+                                    "colored_section",
+                                    "callout",
+                                    "page_break",
+                                    "divider",
+                                ],
+                                "description": (
+                                    "cover_page: page de garde complète (toujours en PREMIER bloc) — "
+                                    "title, subtitle, author, institution, date, reference, doc_type. "
+                                    "header_block: titre compact sans page de garde (pour notes courtes). "
+                                    "heading: titre de section (level 1-3). "
+                                    "paragraph: texte courant. "
+                                    "bullet_list: liste à puces (style: dot|star|square|check|arrow). "
+                                    "numbered_list: liste numérotée. "
+                                    "table: tableau avec en-têtes et lignes. "
+                                    "colored_section: bloc avec fond coloré (titre + texte). "
+                                    "callout: encadré sémantique (callout_type + label + text). "
+                                    "page_break: saut de page. "
+                                    "divider: ligne de séparation."
+                                ),
+                            },
+                            "text":        {"type": "string"},
+                            "level":       {"type": "integer", "minimum": 1, "maximum": 3},
+                            "title":       {"type": "string"},
+                            "subtitle":    {"type": "string"},
+                            "reference":   {"type": "string"},
+                            "date":        {"type": "string"},
+                            "label":       {"type": "string"},
+                            "author":      {"type": "string", "description": "Auteur (pour cover_page)."},
+                            "institution": {"type": "string", "description": "Entreprise ou institution (pour cover_page)."},
+                            "doc_type":    {"type": "string", "description": "Catégorie du document (pour cover_page), ex: RAPPORT D'ACTIVITE, PROPOSITION COMMERCIALE."},
+                            "style": {
+                                "type": "string",
+                                "enum": ["dot", "star", "square", "check", "arrow"],
+                                "description": "Style de puce pour bullet_list.",
+                            },
+                            "callout_type": {
+                                "type": "string",
+                                "enum": ["info", "tip", "warning", "danger", "success", "note"],
+                                "description": (
+                                    "Type sémantique pour callout : "
+                                    "info (bleu — information neutre, contexte, définition) ; "
+                                    "tip (vert — conseil pratique, bonne pratique, astuce) ; "
+                                    "warning (orange — mise en garde, précaution) ; "
+                                    "danger (rouge — erreur critique, risque, blocage) ; "
+                                    "success (vert clair — résultat positif, validation) ; "
+                                    "note (gris — annotation, remarque secondaire)."
+                                ),
+                            },
                             "items": {
-                                "type": "object",
-                                "additionalProperties": True,
-                                "properties": {
-                                    "type": {
-                                        "type": "string",
-                                        "enum": [
-                                            "heading",
-                                            "paragraph",
-                                            "bullet_list",
-                                            "numbered_list",
-                                            "table",
-                                            "block",
-                                            "divider",
-                                            "spacer",
-                                            "page_break",
-                                        ],
-                                    },
-                                    "text": {"type": "string"},
-                                    "level": {"type": "integer"},
-                                    "color": {"type": "string"},
-                                    "align": {"type": "string"},
-                                    "size": {"type": "integer"},
-                                    "bold": {"type": "boolean"},
-                                    "italic": {"type": "boolean"},
-                                    "bullet": {"type": "string"},
-                                    "items": {
-                                        "type": "array",
-                                        "items": {"type": ["string", "object"]},
-                                    },
-                                    "headers": {
-                                        "type": "array",
-                                        "items": {"type": "string"},
-                                    },
-                                    "rows": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "array",
-                                            "items": {"type": "string"},
-                                        },
-                                    },
-                                    "content": {
-                                        "oneOf": [
-                                            {"type": "string"},
-                                            {"type": "array", "items": {"type": "object"}},
-                                        ]
-                                    },
-                                    "bg": {"type": "string"},
-                                    "text_color": {"type": "string"},
-                                    "border": {"type": "string"},
-                                    "header_bg": {"type": "string"},
-                                    "header_color": {"type": "string"},
-                                    "zebra": {"type": "string"},
-                                    "thickness": {"type": "integer"},
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "headers": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "rows": {
+                                "type": "array",
+                                "items": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
                                 },
                             },
                         },
@@ -240,24 +237,7 @@ CREATE_DOCUMENT_TOOL: dict = {
 }
 
 
-def _or_model(model_id: str) -> str:
-    """Retourne le nom complet LiteLLM pour OpenRouter."""
-    name = _OPENROUTER_MODELS.get(model_id, model_id)
-    return f"openrouter/{name}"
-
-
 class LLMManager:
-    """
-    Orchestrateur LLM — tout passe par LiteLLM + OpenRouter.
-
-    Méthodes publiques :
-      stream_with_tools() — streaming texte + outils simultanés (chemin principal)
-      stream_chat()       — streaming texte pur, sans outils (comparaison, etc.)
-      call_with_tools()   — non-streaming avec outils (fallback si streaming+tools défaillant)
-      generate_text()     — non-streaming sans outils (titres, résumés, routage)
-    """
-
-    # ── Validation ──────────────────────────────────────────────────────
 
     def _check_provider_model(self, provider: str, model_id: str) -> None:
         if not is_provider_active(provider):
@@ -271,18 +251,12 @@ class LLMManager:
         except ValueError as exc:
             raise BoulgaError(str(exc), status_code=400, code="MODEL_NOT_FOUND")
 
-    # ── Construction des messages ────────────────────────────────────────
-
     def _build_messages(
         self,
         messages: list[dict],
         system_prompt: str,
         files: Optional[list[dict]] = None,
     ) -> list[dict]:
-        """
-        Convertit les messages Boulga en format OpenAI/LiteLLM.
-        Fichiers binaires injectés en base64 dans le dernier message user.
-        """
         result: list[dict] = []
 
         if system_prompt:
@@ -315,93 +289,6 @@ class LLMManager:
 
         return result
 
-    # ── Streaming texte + outils ─────────────────────────────────────────
-
-    async def stream_with_tools(
-        self,
-        provider: str,
-        model_id: str,
-        messages: list[dict],
-        system_prompt: str = "",
-        files: Optional[list[dict]] = None,
-        tools: Optional[list[dict]] = None,
-        effort: str = "medium",
-    ) -> AsyncIterator[dict]:
-        """
-        Streaming avec outils (tool_choice="auto").
-
-        Yield :
-          {"type": "chunk", "text": str}                        — deltas de texte en temps réel
-          {"type": "tool_call", "name": str, "arguments": dict} — outil appelé (fin de stream)
-
-        Les fragments d'arguments du tool_call sont accumulés pendant le stream
-        (le code Python arrive en morceaux) et parsés en JSON à la fin.
-        """
-        self._check_provider_model(provider, model_id)
-
-        litellm_messages = self._build_messages(messages, system_prompt, files)
-
-        max_tokens = _max_tokens(model_id)
-        logger.debug("LLM stream_with_tools model=%s provider=%s max_tokens=%d", model_id, provider, max_tokens)
-        kwargs: dict = {
-            "model": _or_model(model_id),
-            "messages": litellm_messages,
-            "stream": True,
-            "temperature": _OR_TEMPERATURE.get(effort, 0.5),
-            "max_tokens": max_tokens,
-            "api_key": settings.OPENROUTER_API_KEY,
-            "extra_headers": _OR_HEADERS,
-            "timeout": 120,
-            "tool_choice": "auto",
-        }
-        if tools:
-            kwargs["tools"] = tools
-
-        import time as _time
-        tool_calls_acc: dict[int, dict] = {}
-        _last_heartbeat = 0.0
-
-        response = await _completion_with_fallback(kwargs)
-
-        async for chunk in response:
-            choice = chunk.choices[0]
-            delta = choice.delta
-
-            if delta and delta.content:
-                yield {"type": "chunk", "text": delta.content}
-
-            if delta and delta.tool_calls:
-                now = _time.monotonic()
-                for tc_delta in delta.tool_calls:
-                    idx = tc_delta.index
-                    if idx not in tool_calls_acc:
-                        tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
-                        yield {"type": "tool_started"}
-                        _last_heartbeat = now
-                    if tc_delta.id:
-                        tool_calls_acc[idx]["id"] = tc_delta.id
-                    if tc_delta.function:
-                        if tc_delta.function.name:
-                            tool_calls_acc[idx]["name"] += tc_delta.function.name
-                        if tc_delta.function.arguments:
-                            tool_calls_acc[idx]["arguments"] += tc_delta.function.arguments
-                if now - _last_heartbeat >= 8:
-                    yield {"type": "tool_progress"}
-                    _last_heartbeat = now
-
-        if tool_calls_acc:
-            tc = tool_calls_acc[0]
-            try:
-                arguments = json.loads(tc["arguments"]) if tc["arguments"] else {}
-                yield {"type": "tool_call", "name": tc["name"], "arguments": arguments}
-            except json.JSONDecodeError:
-                logger.error(
-                    "Tool call JSON tronqué pour %s (len=%d) — fichier non généré",
-                    tc["name"],
-                    len(tc["arguments"] or ""),
-                )
-                yield {"type": "chunk", "text": "\n\n⚠️ La génération du document a échoué (réponse tronquée). Réessaie en simplifiant ta demande."}
-
     # ── Streaming texte pur ───────────────────────────────────────────────
 
     async def stream_chat(
@@ -414,11 +301,6 @@ class LLMManager:
         effort: str = "medium",
         enable_search: bool = False,
     ) -> AsyncIterator[dict]:
-        """
-        Streaming texte pur, sans outils.
-        Utilisé pour le chat normal (sans génération de fichier).
-        Yield : {"type": "text", "text": str}
-        """
         self._check_provider_model(provider, model_id)
 
         litellm_messages = self._build_messages(messages, system_prompt, files)
@@ -433,7 +315,7 @@ class LLMManager:
             "max_tokens": max_tokens,
             "api_key": settings.OPENROUTER_API_KEY,
             "extra_headers": _OR_HEADERS,
-            "timeout": 60,
+            "timeout": 600,
         }
         response = await _completion_with_fallback(kwargs)
 
@@ -442,70 +324,85 @@ class LLMManager:
             if delta and delta.content:
                 yield {"type": "text", "text": delta.content}
 
-    # ── Non-streaming avec outils ────────────────────────────────────────
+    # ── Streaming texte + tools ────────────────────────────────────────────
 
-    async def call_with_tools(
+    async def stream_chat_with_tools(
         self,
         provider: str,
         model_id: str,
         messages: list[dict],
         system_prompt: str = "",
         files: Optional[list[dict]] = None,
-        tools: Optional[list[dict]] = None,
         effort: str = "medium",
-        tool_choice: str | dict = "auto",
-    ) -> dict:
-        """
-        Appel non-streaming avec outils.
-        Utilisé pour la génération de fichiers.
-
-        Retourne :
-          {
-            "text": str,               # Réponse textuelle du LLM
-            "tool_call": dict | None,  # {"name": str, "arguments": dict} si outil appelé
-          }
-        """
+        tools: Optional[list[dict]] = None,
+    ) -> AsyncIterator[dict]:
         self._check_provider_model(provider, model_id)
 
         litellm_messages = self._build_messages(messages, system_prompt, files)
 
         max_tokens = _max_tokens(model_id)
-        logger.debug("LLM call_with_tools model=%s provider=%s max_tokens=%d", model_id, provider, max_tokens)
+        logger.debug("LLM stream_chat_with_tools model=%s provider=%s", model_id, provider)
         kwargs: dict = {
             "model": _or_model(model_id),
             "messages": litellm_messages,
-            "stream": False,
+            "stream": True,
             "temperature": _OR_TEMPERATURE.get(effort, 0.5),
             "max_tokens": max_tokens,
             "api_key": settings.OPENROUTER_API_KEY,
             "extra_headers": _OR_HEADERS,
-            "timeout": 60,  # 60s max — évite un blocage indéfini
+            "timeout": 600,
         }
-
         if tools:
             kwargs["tools"] = tools
-            kwargs["tool_choice"] = tool_choice
+            kwargs["tool_choice"] = "auto"
 
         response = await _completion_with_fallback(kwargs)
-        msg = response.choices[0].message
 
-        text = msg.content or ""
-        tool_call: dict | None = None
+        tool_call_name = ""
+        tool_call_args = ""
+        finish_reason: str | None = None
 
-        if hasattr(msg, "tool_calls") and msg.tool_calls:
-            tc = msg.tool_calls[0]
-            try:
-                raw_args = tc.function.arguments
-                # arguments peut être une string JSON ou déjà un dict
-                arguments = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-            except (json.JSONDecodeError, Exception):
-                arguments = {}
-            tool_call = {
-                "name": tc.function.name,
-                "arguments": arguments,
+        async for chunk in response:
+            choice = chunk.choices[0]
+            delta = choice.delta
+
+            if delta and delta.content:
+                yield {"type": "text", "text": delta.content}
+
+            if delta and delta.tool_calls:
+                for tc in delta.tool_calls:
+                    if tc.function and tc.function.name:
+                        tool_call_name = tc.function.name
+                    if tc.function and tc.function.arguments:
+                        tool_call_args += tc.function.arguments
+
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
+
+        logger.info(
+            "stream_chat_with_tools finished: finish_reason=%s tool_name=%s args_len=%d",
+            finish_reason, tool_call_name or "(none)", len(tool_call_args),
+        )
+
+        if finish_reason == "length":
+            yield {
+                "type": "text",
+                "text": "\n\n⚠️ La réponse a été tronquée. Essaie avec une demande plus courte.",
             }
 
-        return {"text": text, "tool_call": tool_call}
+        if tool_call_name and tool_call_args:
+            try:
+                parsed = json.loads(tool_call_args)
+                yield {"type": "tool_call", "name": tool_call_name, "arguments": parsed}
+            except json.JSONDecodeError:
+                logger.warning(
+                    "Tool call JSON tronqué pour %s (len=%d, finish_reason=%s)",
+                    tool_call_name, len(tool_call_args), finish_reason,
+                )
+                yield {
+                    "type": "text",
+                    "text": "\n\n⚠️ La génération du document a échoué (réponse tronquée). Réessaie en simplifiant ta demande.",
+                }
 
     # ── Non-streaming texte ──────────────────────────────────────────────
 
@@ -518,10 +415,6 @@ class LLMManager:
         max_tokens: int = 512,
         log_finish_reason: bool = False,
     ) -> str:
-        """
-        Appel non-streaming sans outils.
-        Utilisé pour titres, résumés, routage.
-        """
         self._check_provider_model(provider, model_id)
 
         messages: list[dict] = []
@@ -548,16 +441,8 @@ class LLMManager:
                 provider,
                 max_tokens,
             )
-            if finish_reason == "length":
-                logger.warning(
-                    "Code tronqué — max_tokens insuffisant for model=%s provider=%s max_tokens=%s",
-                    model_id,
-                    provider,
-                    max_tokens,
-                )
 
         return response.choices[0].message.content or ""
 
 
-# Singleton
 llm_manager = LLMManager()

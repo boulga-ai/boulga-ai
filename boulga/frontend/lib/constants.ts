@@ -1,3 +1,1 @@
-// Les appels API passent toujours par le proxy Next.js (/backend → backend réel).
-// Cela évite les problèmes de tunnel en Codespace et les erreurs CORS en production.
-export const API_URL = "/backend";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";

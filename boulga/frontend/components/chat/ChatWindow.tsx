@@ -6,7 +6,6 @@ import MessageBubble from "./MessageBubble";
 import RoutingIndicator from "./RoutingIndicator";
 import { IconSparkles } from "@tabler/icons-react";
 
-// Message d'accueil affiché quand la conversation est vide
 function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center h-full gap-4 select-none">
@@ -28,21 +27,16 @@ function EmptyState() {
   );
 }
 
-// ── ChatWindow ─────────────────────────────────────────────────────────────────
-
 export default function ChatWindow() {
   const messages = useChatStore((s) => s.messages);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const streamingText = useChatStore((s) => s.streamingText);
-  const isBuilding = useChatStore((s) => s.isBuilding);
-  const buildingLogs = useChatStore((s) => s.buildingLogs);
 
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll à chaque chunk et à chaque nouveau log de construction
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [streamingText, messages.length, buildingLogs.length]);
+  }, [streamingText, messages.length]);
 
   if (messages.length === 0 && !isStreaming) {
     return (
@@ -52,7 +46,6 @@ export default function ChatWindow() {
     );
   }
 
-  // Identifier la bulle assistant en cours de streaming (la dernière bulle assistant vide)
   const streamingMessageIndex = isStreaming
     ? messages.findLastIndex((m) => m.role === "assistant" && m.content === "")
     : -1;
@@ -69,13 +62,10 @@ export default function ChatWindow() {
               message={message}
               isStreaming={isThisStreaming}
               streamingText={isThisStreaming ? streamingText : undefined}
-              isBuilding={isThisStreaming ? isBuilding : false}
-              buildingLogs={isThisStreaming ? buildingLogs : undefined}
             />
           );
         })}
 
-        {/* Ancre de scroll */}
         <div ref={bottomRef} className="h-1" />
       </div>
     </div>
