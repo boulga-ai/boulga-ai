@@ -13,7 +13,7 @@ import { useToastStore } from "@/store/toastStore";
 import type { Conversation, Message, LLM, EffortLevel } from "@/types";
 
 const LONG_RESPONSE_WORDS = 500;
-const _FILE_TAG_RE = /<!--file:\{.*?\}-->/gs;
+const _FILE_TAG_RE = /<!--file:\{.*?\}-->/g;
 
 function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
