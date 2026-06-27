@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -8,7 +8,7 @@ import { IconCheck, IconGift } from "@tabler/icons-react";
 import { API_URL } from "@/lib/constants";
 import { useAuthStore } from "@/store/authStore";
 
-export default function RegisterPage() {
+function RegisterContent() {
   const params       = useSearchParams();
   const refCode      = params.get("ref") ?? "";
   const router       = useRouter();
@@ -59,7 +59,6 @@ export default function RegisterPage() {
   return (
     <div className="min-h-screen bg-neutral-bg flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        {/* Logo */}
         <div className="text-center mb-8">
           <h1 className="text-display font-display text-marine">Boulga</h1>
           <p className="text-body font-body text-neutral-text-secondary mt-1">
@@ -67,7 +66,6 @@ export default function RegisterPage() {
           </p>
         </div>
 
-        {/* Bannière de parrainage */}
         {refCode && (
           <div className="mb-6 flex items-start gap-3 p-4 bg-blue-50 border border-blue-700/20 rounded-lg">
             <IconGift size={20} className="flex-shrink-0 text-blue-700 mt-0.5" />
@@ -165,7 +163,6 @@ export default function RegisterPage() {
           </p>
         </div>
 
-        {/* Plan gratuit */}
         <div className="mt-4 flex items-center justify-center gap-2">
           <IconCheck size={14} className="text-success" />
           <span className="text-caption font-body text-neutral-text-secondary">
@@ -174,5 +171,13 @@ export default function RegisterPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense>
+      <RegisterContent />
+    </Suspense>
   );
 }
