@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { IconCheck, IconX, IconLoader } from "@tabler/icons-react";
@@ -17,7 +17,7 @@ const TIER_LABELS: Record<string, string> = {
   ocean:  "Océan",
 };
 
-export default function PaymentSuccessPage() {
+function PaymentSuccessContent() {
   const params = useSearchParams();
   const txn    = params.get("txn") ?? "";
 
@@ -53,7 +53,6 @@ export default function PaymentSuccessPage() {
         } else if (res.status === "not_found") {
           setStatus("not_found");
         } else if (attempts < 8) {
-          // Réessayer jusqu'à 8 fois (webhook peut prendre quelques secondes)
           setTimeout(() => {
             if (mounted) setAttempts((n) => n + 1);
           }, 2000);
@@ -142,5 +141,17 @@ export default function PaymentSuccessPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function PaymentSuccessPage() {
+  return (
+    <Suspense fallback={
+      <div className="h-full flex items-center justify-center bg-neutral-bg">
+        <IconLoader size={32} className="text-blue-700 animate-spin" />
+      </div>
+    }>
+      <PaymentSuccessContent />
+    </Suspense>
   );
 }
