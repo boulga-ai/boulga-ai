@@ -1,3 +1,4 @@
+// lib/stream.ts
 import { API_URL } from "@/lib/constants";
 import { useAuthStore } from "@/store/authStore";
 
@@ -43,7 +44,9 @@ export interface StreamHandlers {
   onFileReady?: (info: FileReadyInfo) => void;
   onImageNotSupported?: (provider: string, message: string) => void;
   onDone: (messageId: string) => void;
-  onError: (message: string) => void;
+  // `code` : identifiant d'erreur typé (cf. lib/errorCodes.ts). Absent pour les
+  // erreurs réseau/transport. Repli sur `message` pour la rétrocompat.
+  onError: (message: string, code?: string) => void;
 }
 
 // ── streamChat ────────────────────────────────────────────────────────────────
@@ -126,8 +129,8 @@ export function streamChat(
             case "routing":
               handlers.onRouting?.({
                 provider: event.provider as string,
-                model:    event.model as string,
-                reason:   event.reason as string,
+                model: event.model as string,
+                reason: event.reason as string,
               });
               break;
             case "chunk":
@@ -156,7 +159,10 @@ export function streamChat(
               handlers.onDone(event.message_id as string);
               break;
             case "error":
-              handlers.onError(event.message as string);
+              handlers.onError(
+                event.message as string,
+                event.code as string | undefined,
+              );
               break;
           }
         }

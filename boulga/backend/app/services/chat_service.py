@@ -10,6 +10,7 @@ _FILE_TAG_STRIP = _re_svc.compile(r"\n?<!--file:\{.*?\}-->", _re_svc.DOTALL)
 
 logger = logging.getLogger(__name__)
 
+from app.core.stream_errors import StreamErrorCode, stream_error
 from app.db.repositories.conversation_repository import ConversationRepository
 from app.db.repositories.message_repository import MessageRepository
 from app.db.session import get_supabase
@@ -154,18 +155,18 @@ class ChatService:
         else:
             conv = self._conv_repo.get_by_id(UUID(conversation_id))
             if not conv or conv.get("user_id") != user_id:
-                yield {"type": "error", "message": "Conversation introuvable"}
+                yield stream_error(StreamErrorCode.CONVERSATION_NOT_FOUND)
                 return
 
         yield {"type": "conversation", "id": conversation_id, "is_new": is_new}
 
         # b. Quotas
         if not await self._quota_svc.is_message_allowed(user_id):
-            yield {"type": "error", "message": "quota_exceeded"}
+            yield stream_error(StreamErrorCode.QUOTA_EXCEEDED)
             return
 
         if not self._sub_svc.check_can_use_model(user_id, provider, model_id):
-            yield {"type": "error", "message": "model_access_denied"}
+            yield stream_error(StreamErrorCode.MODEL_ACCESS_DENIED)
             return
 
         # c. Routage Automatique
@@ -243,7 +244,7 @@ class ChatService:
             else:
                 msg = raw if len(raw) < 200 else "Une erreur est survenue. Veuillez réessayer."
             logger.error("LLM error provider=%s model=%s: %s", provider, model_id, raw[:300])
-            yield {"type": "error", "message": msg}
+            yield stream_error(StreamErrorCode.LLM_ERROR, msg)
             return
 
         # g. Si le LLM n'a envoyé aucun texte mais a appelé un tool, générer un message
@@ -310,7 +311,7 @@ class ChatService:
         from app.services.file_service import FileService
 
         if not await self._quota_svc.is_file_allowed(user_id):
-            yield {"type": "error", "message": "file_quota_exceeded"}
+            yield stream_error(StreamErrorCode.FILE_QUOTA_EXCEEDED)
             return
 
         import asyncio as _asyncio

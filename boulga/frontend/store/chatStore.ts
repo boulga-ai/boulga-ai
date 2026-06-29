@@ -1,3 +1,4 @@
+// boulga/frontend/store/chatStore.ts
 import { create } from "zustand";
 import {
   getLLMs,
@@ -6,6 +7,7 @@ import {
   deleteConversation as apiDeleteConversation,
 } from "@/lib/api";
 import { streamChat, type RoutingInfo } from "@/lib/stream";
+import { StreamErrorCode } from "@/lib/errorCodes";
 import { API_URL } from "@/lib/constants";
 import { useDocStore } from "@/store/docStore";
 import { useSubscriptionStore } from "@/store/subscriptionStore";
@@ -104,7 +106,7 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
   messages: [],
   llms: [],
   selectedProvider: _savedModel?.provider ?? "gemini",
-  selectedModel:    _savedModel?.model    ?? "gemini-2.5-flash",
+  selectedModel: _savedModel?.model ?? "gemini-2.5-flash",
   isStreaming: false,
   streamingText: "",
   autoRoute: false,
@@ -300,8 +302,8 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
 
         onImageNotSupported: (_provider, message) => {
           useToastStore.getState().addToast({
-            type:    "info",
-            title:   "Génération d'images non disponible",
+            type: "info",
+            title: "Génération d'images non disponible",
             message,
           });
         },
@@ -335,7 +337,7 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
           useSubscriptionStore.getState().loadSubscription();
         },
 
-        onError: (message) => {
+        onError: (message, code) => {
           set((s) => ({
             messages: s.messages.filter(
               (m) => m.id !== optimisticAssistantId && m.id !== optimisticUserId,
@@ -345,16 +347,20 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
             _abortController: null,
           }));
 
-          if (message === "quota_exceeded") {
+          // `code` typé en priorité ; repli sur `message` pour rétrocompat avec
+          // un backend qui n'émettrait pas encore le champ `code`.
+          const errorCode = code ?? message;
+
+          if (errorCode === StreamErrorCode.QuotaExceeded) {
             useSubscriptionStore.getState().setShowQuotaModal(true);
-          } else if (message === "model_access_denied") {
+          } else if (errorCode === StreamErrorCode.ModelAccessDenied) {
             useToastStore.getState().addToast({
               type: "info",
               title: "Modèle non disponible",
               message: "Ce modèle n'est pas inclus dans votre offre actuelle.",
               action: { label: "Voir les offres", href: "/pricing" },
             });
-          } else if (message === "file_quota_exceeded") {
+          } else if (errorCode === StreamErrorCode.FileQuotaExceeded) {
             useToastStore.getState().addToast({
               type: "warning",
               title: "Limite de fichiers atteinte",
@@ -414,9 +420,9 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
         file_ids: userMsg.file_ids ?? [],
       },
       {
-        onConversation: () => {},
+        onConversation: () => { },
         onChunk: (chunk) => set((s) => ({ streamingText: s.streamingText + chunk })),
-        onTitle: () => {},
+        onTitle: () => { },
         onFileReady: (info) => {
           useDocStore.getState().addArtifact({
             id: info.file_id,
