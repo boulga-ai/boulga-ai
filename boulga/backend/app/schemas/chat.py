@@ -51,6 +51,14 @@ class MessageOut(BaseModel):
     created_at: datetime
 
 
+class GeneratedFileOut(BaseModel):
+    id: str
+    message_id: Optional[str] = None
+    original_name: str
+    mime_type: str
+    size_bytes: int
+
+
 class ConversationDetailOut(BaseModel):
     id: str
     user_id: str
@@ -60,3 +68,4 @@ class ConversationDetailOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     messages: list[MessageOut]
+    generated_files: list[GeneratedFileOut] = []

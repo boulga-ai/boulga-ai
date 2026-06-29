@@ -54,16 +54,19 @@ CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages (created_at);
 -- TABLE files
 -- ============================================================
 CREATE TABLE IF NOT EXISTS files (
-    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    original_name  VARCHAR(500) NOT NULL,
-    mime_type      VARCHAR(100) NOT NULL,
-    storage_path   VARCHAR(1000) NOT NULL,
-    size_bytes     BIGINT NOT NULL DEFAULT 0,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    original_name     VARCHAR(500) NOT NULL,
+    mime_type         VARCHAR(100) NOT NULL,
+    storage_path      VARCHAR(1000) NOT NULL,
+    size_bytes        BIGINT NOT NULL DEFAULT 0,
+    conversation_id   UUID REFERENCES conversations(id) ON DELETE SET NULL,
+    message_id        UUID REFERENCES messages(id) ON DELETE SET NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_files_user_id ON files (user_id);
+CREATE INDEX IF NOT EXISTS idx_files_conversation_id ON files (conversation_id);
 
 -- ============================================================
 -- TABLE subscriptions

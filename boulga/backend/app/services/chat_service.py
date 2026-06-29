@@ -1,5 +1,6 @@
 """chat_service.py — Service de chat principal (streaming + génération de documents)."""
 
+import asyncio
 import logging
 import re as _re_svc
 from typing import AsyncIterator, Optional
@@ -38,6 +39,8 @@ MODEL_CONTEXT_WINDOWS: dict[str, int] = {
 _ECO_PROVIDER = "gemini"
 _ECO_MODEL    = "gemini-2.5-flash"
 _RECENT_KEEP  = 10
+_DOC_DELIMITER = "<!-- boulga:doc -->"
+_DELIM_LEN     = len(_DOC_DELIMITER)
 
 
 def _estimate_tokens(text: str) -> int:
@@ -146,14 +149,14 @@ class ChatService:
 
         # a. Créer ou vérifier la conversation
         if is_new:
-            conv = self._conv_repo.create({
+            conv = await asyncio.to_thread(self._conv_repo.create, {
                 "user_id":  user_id,
                 "provider": provider,
                 "model_id": model_id,
             })
             conversation_id = conv["id"]
         else:
-            conv = self._conv_repo.get_by_id(UUID(conversation_id))
+            conv = await asyncio.to_thread(self._conv_repo.get_by_id, UUID(conversation_id))
             if not conv or conv.get("user_id") != user_id:
                 yield stream_error(StreamErrorCode.CONVERSATION_NOT_FOUND)
                 return
@@ -184,7 +187,7 @@ class ChatService:
                 pass
 
         # d. Enregistrer message user
-        self._msg_repo.create({
+        await asyncio.to_thread(self._msg_repo.create, {
             "conversation_id": conversation_id,
             "role":    "user",
             "content": message,
@@ -193,8 +196,8 @@ class ChatService:
         })
 
         # e. Préparer contexte
-        history         = self._msg_repo.list_by_conversation(UUID(conversation_id))
-        text_context, binary_files = self._prepare_files(file_ids, provider)
+        history         = await asyncio.to_thread(self._msg_repo.list_by_conversation, UUID(conversation_id))
+        text_context, binary_files = await asyncio.to_thread(self._prepare_files, file_ids, provider)
         system_prompt   = get_full_system_prompt(tool_slug)
         history_for_llm = await self._prepare_history(history, model_id)
 
@@ -217,9 +220,11 @@ class ChatService:
 
         files_arg = binary_files if binary_files else None
 
-        # f. Appel LLM — streaming avec tools
+        # f. Appel LLM — streaming avec détection délimiteur document
         full_response = ""
         tool_call_event: dict | None = None
+        _doc_parts: list[str] | None = None
+        _pending = ""
 
         try:
             async for event in llm_manager.stream_chat_with_tools(
@@ -232,8 +237,29 @@ class ChatService:
                 tools=[GENERATE_DOCUMENT_TOOL],
             ):
                 if event["type"] == "text":
-                    full_response += event["text"]
-                    yield {"type": "chunk", "text": event["text"]}
+                    if _doc_parts is not None:
+                        _doc_parts.append(event["text"])
+                        yield {"type": "doc_chunk", "text": event["text"]}
+                    else:
+                        _pending += event["text"]
+                        dp = _pending.find(_DOC_DELIMITER)
+                        if dp != -1:
+                            before = _pending[:dp]
+                            if before:
+                                full_response += before
+                                yield {"type": "chunk", "text": before}
+                            remainder = _pending[dp + _DELIM_LEN:]
+                            _doc_parts = [remainder]
+                            if remainder:
+                                yield {"type": "doc_chunk", "text": remainder}
+                            _pending = ""
+                        else:
+                            safe = max(0, len(_pending) - _DELIM_LEN + 1)
+                            if safe > 0:
+                                flush = _pending[:safe]
+                                full_response += flush
+                                yield {"type": "chunk", "text": flush}
+                                _pending = _pending[safe:]
                 elif event["type"] == "tool_call":
                     tool_call_event = event
 
@@ -247,15 +273,24 @@ class ChatService:
             yield stream_error(StreamErrorCode.LLM_ERROR, msg)
             return
 
-        # g. Si le LLM n'a envoyé aucun texte mais a appelé un tool, générer un message
-        if not full_response.strip() and tool_call_event:
-            filename = tool_call_event.get("arguments", {}).get("filename", "document")
-            fallback = f"Je génère le document **{filename}** pour vous..."
-            full_response = fallback
-            yield {"type": "chunk", "text": fallback}
+        if _doc_parts is None and _pending:
+            full_response += _pending
+            yield {"type": "chunk", "text": _pending}
+
+        # g. Fallback si le LLM n'a envoyé aucun texte conversationnel
+        if not full_response.strip():
+            if _doc_parts is not None:
+                fallback = "Je génère le document pour vous..."
+                full_response = fallback
+                yield {"type": "chunk", "text": fallback}
+            elif tool_call_event:
+                filename = tool_call_event.get("arguments", {}).get("filename", "document")
+                fallback = f"Je génère le document **{filename}** pour vous..."
+                full_response = fallback
+                yield {"type": "chunk", "text": fallback}
 
         # h. Enregistrer réponse assistant
-        assistant_msg = self._msg_repo.create({
+        assistant_msg = await asyncio.to_thread(self._msg_repo.create, {
             "conversation_id": conversation_id,
             "role":    "assistant",
             "content": full_response,
@@ -263,8 +298,18 @@ class ChatService:
             "model_id": model_id,
         })
 
-        # i. Génération de document si tool_call
-        if tool_call_event and tool_call_event.get("name") == "generate_document":
+        # i. Génération de document (content-based ou tool-based)
+        if _doc_parts is not None:
+            raw_doc = "".join(_doc_parts).lstrip()
+            if raw_doc:
+                async for file_event in self._handle_content_document(
+                    raw_doc,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    message_id=assistant_msg["id"],
+                ):
+                    yield file_event
+        elif tool_call_event and tool_call_event.get("name") == "generate_document":
             async for file_event in self._handle_document_generation(
                 tool_call_event["arguments"],
                 user_id=user_id,
@@ -290,7 +335,7 @@ class ChatService:
                     prompt=title_prompt,
                 )
                 title = raw_title.strip().strip('"').strip("'")[:100]
-                self._conv_repo.update_title(UUID(conversation_id), title)
+                await asyncio.to_thread(self._conv_repo.update_title, UUID(conversation_id), title)
                 yield {"type": "title", "title": title}
             except Exception:
                 pass
@@ -314,8 +359,6 @@ class ChatService:
             yield stream_error(StreamErrorCode.FILE_QUOTA_EXCEEDED)
             return
 
-        import asyncio as _asyncio
-
         fmt      = arguments.get("format", "docx")
         raw_name = arguments.get("filename", "document")
         blocks   = arguments.get("blocks", [])
@@ -330,7 +373,7 @@ class ChatService:
         filename  = f"{safe_name}.{fmt}"
 
         try:
-            file_bytes, mime_type = await _asyncio.to_thread(
+            file_bytes, mime_type = await asyncio.to_thread(
                 render_document, blocks, fmt, template, options or None
             )
         except Exception as exc:
@@ -339,7 +382,8 @@ class ChatService:
 
         try:
             file_svc = FileService()
-            record = file_svc.store_generated_file(
+            record = await asyncio.to_thread(
+                file_svc.store_generated_file,
                 user_id=user_id,
                 filename=filename,
                 content=file_bytes,
@@ -359,14 +403,106 @@ class ChatService:
         try:
             import json as _json
             from uuid import UUID as _UUID
-            msg = self._msg_repo.get_by_id(_UUID(message_id))
+            msg = await asyncio.to_thread(self._msg_repo.get_by_id, _UUID(message_id))
             if msg:
                 tag_data = _json.dumps({
                     "id": file_id, "name": filename,
                     "mime": mime_type, "size": len(file_bytes),
                 }, ensure_ascii=False)
                 tag = f"\n<!--file:{tag_data}-->"
-                self._msg_repo.update_content(message_id, (msg.get("content") or "") + tag)
+                await asyncio.to_thread(self._msg_repo.update_content, message_id, (msg.get("content") or "") + tag)
+        except Exception:
+            pass
+
+        yield {
+            "type":       "file_ready",
+            "file_id":    file_id,
+            "filename":   filename,
+            "mime_type":  mime_type,
+            "size":       len(file_bytes),
+            "url":        download_url,
+            "message_id": message_id,
+        }
+
+    # ── Génération de document via Markdown étendu (nouveau chemin) ───
+
+    async def _handle_content_document(
+        self,
+        raw_markdown: str,
+        user_id: str,
+        conversation_id: str,
+        message_id: str,
+    ) -> AsyncIterator[dict]:
+        from app.services.document_renderer import render_document
+        from app.services.file_service import FileService
+        from app.services.md_to_blocks import parse_document
+
+        if not await self._quota_svc.is_file_allowed(user_id):
+            yield stream_error(StreamErrorCode.FILE_QUOTA_EXCEEDED)
+            return
+
+        blocks, meta = await asyncio.to_thread(parse_document, raw_markdown)
+        if not blocks:
+            logger.warning(
+                "Content document parsing produced no blocks (len=%d)",
+                len(raw_markdown),
+            )
+            return
+
+        fmt      = meta.get("format", "docx")
+        template = meta.get("template", "minimal")
+        raw_name = meta.get("filename", "document")
+        options  = {
+            k: meta[k]
+            for k in ("primary_color", "company_name")
+            if meta.get(k)
+        }
+
+        safe_name = raw_name.strip().replace("/", "-").replace("\\", "-")[:80]
+        filename  = f"{safe_name}.{fmt}"
+
+        try:
+            file_bytes, mime_type = await asyncio.to_thread(
+                render_document, blocks, fmt, template, options or None
+            )
+        except Exception as exc:
+            logger.error("Document render failed: %s", exc)
+            return
+
+        try:
+            file_svc = FileService()
+            record = await asyncio.to_thread(
+                file_svc.store_generated_file,
+                user_id=user_id,
+                filename=filename,
+                content=file_bytes,
+                mime_type=mime_type,
+                conversation_id=conversation_id,
+                message_id=message_id,
+            )
+            await self._quota_svc.consume_file(user_id)
+        except Exception as exc:
+            logger.error("File storage failed: %s", exc)
+            return
+
+        file_id = record["id"]
+        download_url = record.get("signed_url") or f"/api/files/{file_id}/download"
+
+        try:
+            import json as _json
+            from uuid import UUID as _UUID
+            msg = await asyncio.to_thread(self._msg_repo.get_by_id, _UUID(message_id))
+            if msg:
+                tag_data = _json.dumps({
+                    "id": file_id, "name": filename,
+                    "mime": mime_type, "size": len(file_bytes),
+                }, ensure_ascii=False)
+                tag = f"\n<!--file:{tag_data}-->"
+                await asyncio.to_thread(
+                    self._msg_repo.update_content,
+                    message_id,
+                    (msg.get("content") or "") + tag,
+                )
         except Exception:
             pass
 

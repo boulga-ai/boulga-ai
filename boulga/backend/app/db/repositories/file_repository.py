@@ -48,6 +48,16 @@ class FileRepository:
         )
         return result.count or 0
 
+    def list_by_conversation(self, conversation_id: UUID) -> list[dict]:
+        result = (
+            self.db.table(TABLE)
+            .select("id, original_name, mime_type, size_bytes, message_id, created_at")
+            .eq("conversation_id", str(conversation_id))
+            .order("created_at")
+            .execute()
+        )
+        return result.data or []
+
     def delete(self, file_id: UUID) -> bool:
         self.db.table(TABLE).delete().eq("id", str(file_id)).execute()
         return True

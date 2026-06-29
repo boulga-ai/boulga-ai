@@ -206,8 +206,17 @@ export interface FileInfo {
 // Conversation avec messages (GET /api/conversations/{id})
 // ============================================================
 
+export interface GeneratedFile {
+  id: string;
+  message_id: string | null;
+  original_name: string;
+  mime_type: string;
+  size_bytes: number;
+}
+
 export interface ConversationDetail extends Conversation {
   messages: Message[];
+  generated_files: GeneratedFile[];
 }
 
 // ============================================================

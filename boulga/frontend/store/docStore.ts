@@ -1,3 +1,4 @@
+// boulga/frontend/store/docStore.ts
 import { create } from "zustand";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -30,6 +31,8 @@ interface DocStoreState {
   currentArtifactIndex: number | null;
   /** Panel ouvert */
   panelOpen: boolean;
+  /** Le document est en cours de streaming (Markdown progressif) */
+  isStreamingDoc: boolean;
 }
 
 interface DocStoreActions {
@@ -45,6 +48,10 @@ interface DocStoreActions {
   closePanel: () => void;
   /** Ouvre le panel sur l'artifact courant ou le document */
   openPanel: () => void;
+  /** Append un fragment Markdown pendant le streaming du document */
+  appendDocChunk: (text: string) => void;
+  /** Marque la fin du streaming document */
+  finishDocStream: () => void;
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -55,6 +62,7 @@ export const useDocStore = create<DocStoreState & DocStoreActions>((set, get) =>
   artifacts: [],
   currentArtifactIndex: null,
   panelOpen: false,
+  isStreamingDoc: false,
 
   openDocument: (content: string, format = "markdown") => {
     set({
@@ -124,5 +132,28 @@ export const useDocStore = create<DocStoreState & DocStoreActions>((set, get) =>
 
   openPanel: () => {
     set({ panelOpen: true });
+  },
+
+  appendDocChunk: (text: string) => {
+    const { currentDocument, isStreamingDoc } = get();
+    if (!isStreamingDoc) {
+      set({
+        currentDocument: { content: text, format: "markdown", versions: [] },
+        viewingVersionIndex: null,
+        currentArtifactIndex: null,
+        panelOpen: true,
+        isStreamingDoc: true,
+      });
+    } else {
+      set({
+        currentDocument: currentDocument
+          ? { ...currentDocument, content: currentDocument.content + text }
+          : { content: text, format: "markdown", versions: [] },
+      });
+    }
+  },
+
+  finishDocStream: () => {
+    set({ isStreamingDoc: false });
   },
 }));

@@ -9,6 +9,7 @@ import csv
 import io
 import logging
 import uuid
+from collections import OrderedDict
 from typing import Optional
 from uuid import UUID
 
@@ -27,6 +28,12 @@ CSV_SAMPLE_ROWS = 20
 
 # Providers supportant les fichiers binaires (multimodal) pour les PDF
 MULTIMODAL_PROVIDERS = {"gemini", "openai"}
+
+# Cache LRU borné — représentation extraite par (file_id, provider).
+# Clé provider requise : les PDF sont envoyés en binaire ou extraits en texte
+# selon que le provider est multimodal ou non.
+_CONTENT_CACHE_MAX = 128
+_content_cache: OrderedDict[tuple[str, str], dict] = OrderedDict()
 
 # Extensions → MIME types normalisés (pour les uploads avec MIME incorrects)
 _EXT_MIME: dict[str, str] = {
@@ -123,8 +130,6 @@ class FileService:
         """
         Stocke un fichier généré par le LLM dans le bucket Supabase 'generated'.
         Retourne le dict de la table files (id, original_name, mime_type, size_bytes…).
-        Les colonnes source/conversation_id/message_id sont omises pour compatibilité
-        avec le schéma initial — l'utilisateur les ajoutera manuellement dans Supabase.
         """
         import uuid as _uuid
         file_id = str(_uuid.uuid4())
@@ -144,6 +149,8 @@ class FileService:
             "storage_path": storage_path,
             "mime_type": mime_type,
             "size_bytes": len(content),
+            "conversation_id": conversation_id,
+            "message_id": message_id,
         }
 
         record = self._repo.create(data)
@@ -194,6 +201,27 @@ class FileService:
     ) -> dict:
         """
         Retourne le contenu du fichier sous une forme adaptée au LLM.
+        Résultat mis en cache (LRU, clé = file_id + provider) — les fichiers
+        sont immuables après upload, la représentation extraite ne change jamais.
+        """
+        key = (file_id, provider)
+        if key in _content_cache:
+            _content_cache.move_to_end(key)
+            return _content_cache[key]
+
+        result = self._extract_file_content(file_id, provider)
+
+        if result:
+            _content_cache[key] = result
+            _content_cache.move_to_end(key)
+            if len(_content_cache) > _CONTENT_CACHE_MAX:
+                _content_cache.popitem(last=False)
+
+        return result
+
+    def _extract_file_content(self, file_id: str, provider: str) -> dict:
+        """
+        Télécharge et extrait la représentation du fichier adaptée au LLM.
 
         Stratégie par type :
           Image       → binary (multimodal) pour tous providers

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from app.core.exceptions import NotFoundError
 from app.core.security import get_current_user
 from app.db.repositories.conversation_repository import ConversationRepository
+from app.db.repositories.file_repository import FileRepository
 from app.db.repositories.message_repository import MessageRepository
 from app.db.session import get_supabase
 from app.schemas.chat import ConversationDetailOut, ConversationOut
@@ -31,13 +32,15 @@ async def get_conversation(
     db = get_supabase()
     conv_repo = ConversationRepository(db)
     msg_repo = MessageRepository(db)
+    file_repo = FileRepository(db)
 
     conversation = conv_repo.get_by_id(UUID(conversation_id))
     if not conversation or conversation["user_id"] != user["sub"]:
         raise NotFoundError("Conversation introuvable")
 
     messages = msg_repo.list_by_conversation(UUID(conversation_id))
-    return {**conversation, "messages": messages}
+    generated_files = file_repo.list_by_conversation(UUID(conversation_id))
+    return {**conversation, "messages": messages, "generated_files": generated_files}
 
 
 @router.delete("/api/conversations/{conversation_id}", status_code=204)

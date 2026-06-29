@@ -40,6 +40,7 @@ export interface StreamHandlers {
   onConversation: (id: string, isNew: boolean) => void;
   onRouting?: (info: RoutingInfo) => void;
   onChunk: (text: string) => void;
+  onDocChunk?: (text: string) => void;
   onTitle: (title: string) => void;
   onFileReady?: (info: FileReadyInfo) => void;
   onImageNotSupported?: (provider: string, message: string) => void;
@@ -135,6 +136,9 @@ export function streamChat(
               break;
             case "chunk":
               handlers.onChunk(event.text as string);
+              break;
+            case "doc_chunk":
+              handlers.onDocChunk?.(event.text as string);
               break;
             case "title":
               handlers.onTitle(event.title as string);

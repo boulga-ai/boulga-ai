@@ -15,7 +15,6 @@ import { useToastStore } from "@/store/toastStore";
 import type { Conversation, Message, LLM, EffortLevel } from "@/types";
 
 const LONG_RESPONSE_WORDS = 500;
-const _FILE_TAG_RE = /<!--file:\{.*?\}-->/g;
 
 function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
@@ -161,36 +160,25 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
         }
       }
 
-      // Restaurer les fichiers générés depuis les tags <!--file:{...}-->
-      const FILE_TAG_RE = /<!--file:(\{.*?\})-->/;
+      // Restaurer les fichiers générés depuis l'API
       const docState = useDocStore.getState();
-      const parsedMsgs = msgs.map((msg) => {
-        if (msg.role !== "assistant" || !msg.content) return msg;
-        const match = FILE_TAG_RE.exec(msg.content);
-        if (!match) return msg;
-        try {
-          const f = JSON.parse(match[1]);
-          const url = `${API_URL}/api/files/${f.id}/download`;
-          if (!docState.artifacts.some((a) => a.id === f.id)) {
-            docState.addArtifact({
-              id: f.id,
-              messageId: msg.id,
-              name: f.name,
-              url,
-              mimeType: f.mime,
-              size: f.size,
-              createdAt: Date.now(),
-            });
-          }
-          return { ...msg, content: msg.content.replace(FILE_TAG_RE, "").trimEnd() };
-        } catch {
-          return msg;
+      for (const f of detail.generated_files ?? []) {
+        if (!docState.artifacts.some((a) => a.id === f.id)) {
+          docState.addArtifact({
+            id: f.id,
+            messageId: f.message_id ?? undefined,
+            name: f.original_name,
+            url: `${API_URL}/api/files/${f.id}/download`,
+            mimeType: f.mime_type,
+            size: f.size_bytes,
+            createdAt: Date.now(),
+          });
         }
-      });
+      }
 
       set({
         currentConversationId: id,
-        messages: parsedMsgs as typeof msgs,
+        messages: msgs,
         selectedProvider: lastProvider,
         selectedModel: lastModel,
       });
@@ -280,6 +268,10 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
           set((s) => ({ streamingText: s.streamingText + chunk }));
         },
 
+        onDocChunk: (text) => {
+          useDocStore.getState().appendDocChunk(text);
+        },
+
         onTitle: (title) => {
           set((s) => ({
             conversations: s.conversations.map((c) =>
@@ -309,7 +301,13 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
         },
 
         onDone: (messageId) => {
-          const finalText = get().streamingText.replace(_FILE_TAG_RE, "").trimEnd();
+          const finalText = get().streamingText.trimEnd();
+          const docState = useDocStore.getState();
+
+          if (docState.isStreamingDoc) {
+            docState.finishDocStream();
+          }
+
           set((s) => ({
             messages: s.messages.map((m) =>
               m.id === optimisticAssistantId
@@ -322,14 +320,9 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
           }));
 
           if (countWords(finalText) > LONG_RESPONSE_WORDS) {
-            const docState = useDocStore.getState();
-            if (docState.currentArtifactIndex === null) {
-              const doc = docState.currentDocument;
-              if (doc) {
-                docState.updateDocument(finalText);
-              } else {
-                docState.openDocument(finalText);
-              }
+            const ds = useDocStore.getState();
+            if (ds.currentArtifactIndex === null && !ds.currentDocument) {
+              ds.openDocument(finalText);
             }
           }
 
@@ -422,6 +415,9 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
       {
         onConversation: () => { },
         onChunk: (chunk) => set((s) => ({ streamingText: s.streamingText + chunk })),
+        onDocChunk: (text) => {
+          useDocStore.getState().appendDocChunk(text);
+        },
         onTitle: () => { },
         onFileReady: (info) => {
           useDocStore.getState().addArtifact({
@@ -436,6 +432,12 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
         },
         onDone: (messageId) => {
           const finalText = get().streamingText;
+          const docState = useDocStore.getState();
+
+          if (docState.isStreamingDoc) {
+            docState.finishDocStream();
+          }
+
           set((s) => ({
             messages: s.messages.map((m) =>
               m.id === regenId ? { ...m, id: messageId, content: finalText } : m,
@@ -444,8 +446,12 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
             streamingText: "",
             _abortController: null,
           }));
+
           if (countWords(finalText) > LONG_RESPONSE_WORDS) {
-            useDocStore.getState().updateDocument(finalText);
+            const ds = useDocStore.getState();
+            if (ds.currentArtifactIndex === null && !ds.currentDocument) {
+              ds.openDocument(finalText);
+            }
           }
         },
         onError: (errMsg) => {

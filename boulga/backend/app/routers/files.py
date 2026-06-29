@@ -1,3 +1,4 @@
+import asyncio
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -19,7 +20,7 @@ async def list_files(user: dict = Depends(get_current_user)):
     Retourne id, original_name, mime_type, size_bytes, created_at — triés par date.
     """
     svc = FileService()
-    records = svc.list_for_user(user["sub"])
+    records = await asyncio.to_thread(svc.list_for_user, user["sub"])
     return [
         {
             "id": r["id"],
@@ -55,7 +56,8 @@ async def upload_file(
 
     svc = FileService()
     try:
-        record = svc.store_file(
+        record = await asyncio.to_thread(
+            svc.store_file,
             user_id=user["sub"],
             filename=file.filename or "upload",
             content=content,
@@ -83,12 +85,12 @@ async def download_file(
     404 si le fichier est introuvable ou n'appartient pas à l'utilisateur.
     """
     svc = FileService()
-    meta = svc.get_meta(file_id)
+    meta = await asyncio.to_thread(svc.get_meta, file_id)
 
     if not meta or meta.get("user_id") != user["sub"]:
         raise NotFoundError("Fichier introuvable")
 
-    content = svc.download_content(meta["storage_path"])
+    content = await asyncio.to_thread(svc.download_content, meta["storage_path"])
 
     safe_name = meta["original_name"].replace('"', '\\"')
     return Response(
