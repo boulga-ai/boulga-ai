@@ -2,10 +2,10 @@
 
 Endpoints :
   POST /api/auth/register         — créer un compte
-  POST /api/auth/login            — se connecter (JWT en cookie httpOnly)
+  POST /api/auth/login            — se connecter (access token en body, refresh en cookie httpOnly)
   GET  /api/auth/me               — profil de l'utilisateur connecté
-  POST /api/auth/logout           — déconnexion (supprime les cookies)
-  POST /api/auth/refresh          — renouveler l'access token via le refresh token
+  POST /api/auth/logout           — déconnexion (supprime le cookie refresh)
+  POST /api/auth/refresh          — renouveler l'access token via le refresh token cookie
   POST /api/auth/forgot-password  — envoyer un email de réinitialisation
   POST /api/auth/reset-password   — réinitialiser le mot de passe
 """
@@ -18,7 +18,6 @@ from pydantic import BaseModel, EmailStr, Field
 
 from app.config import settings
 from app.core.security import (
-    ACCESS_COOKIE,
     REFRESH_COOKIE,
     create_jwt,
     create_refresh_token,
@@ -62,35 +61,23 @@ class ResetPasswordRequest(BaseModel):
 
 # ── Cookie helpers ────────────────────────────────────────────────────────────
 
-def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
     cookie_kwargs = {
         "httponly": True,
         "secure": settings.is_production,
         "samesite": settings.COOKIE_SAMESITE,
-        "path": "/",
+        "path": "/api/auth/refresh",
+        "max_age": settings.JWT_REFRESH_EXPIRE_DAYS * 86400,
     }
     if settings.COOKIE_DOMAIN:
         cookie_kwargs["domain"] = settings.COOKIE_DOMAIN
-
-    response.set_cookie(
-        key=ACCESS_COOKIE,
-        value=access_token,
-        max_age=settings.JWT_EXPIRE_MINUTES * 60,
-        **cookie_kwargs,
-    )
-    response.set_cookie(
-        key=REFRESH_COOKIE,
-        value=refresh_token,
-        max_age=settings.JWT_REFRESH_EXPIRE_DAYS * 86400,
-        **cookie_kwargs,
-    )
+    response.set_cookie(key=REFRESH_COOKIE, value=refresh_token, **cookie_kwargs)
 
 
-def _clear_auth_cookies(response: Response) -> None:
-    cookie_kwargs = {"path": "/", "httponly": True}
+def _clear_refresh_cookie(response: Response) -> None:
+    cookie_kwargs = {"path": "/api/auth/refresh", "httponly": True}
     if settings.COOKIE_DOMAIN:
         cookie_kwargs["domain"] = settings.COOKIE_DOMAIN
-    response.delete_cookie(key=ACCESS_COOKIE, **cookie_kwargs)
     response.delete_cookie(key=REFRESH_COOKIE, **cookie_kwargs)
 
 
@@ -127,10 +114,13 @@ async def register(req: RegisterRequest, response: Response):
     jwt_payload = {"sub": user["id"], "email": user["email"], "is_admin": bool(user.get("is_admin", False))}
     access_token = create_jwt(jwt_payload)
     refresh_token = create_refresh_token(jwt_payload)
+    _set_refresh_cookie(response, refresh_token)
 
-    _set_auth_cookies(response, access_token, refresh_token)
-
-    return {"user": _safe_user(user)}
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": _safe_user(user),
+    }
 
 
 @router.post("/login")
@@ -148,10 +138,13 @@ async def login(req: LoginRequest, response: Response):
     jwt_payload = {"sub": user["id"], "email": user["email"], "is_admin": bool(user.get("is_admin", False))}
     access_token = create_jwt(jwt_payload)
     refresh_token = create_refresh_token(jwt_payload)
+    _set_refresh_cookie(response, refresh_token)
 
-    _set_auth_cookies(response, access_token, refresh_token)
-
-    return {"user": _safe_user(user)}
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": _safe_user(user),
+    }
 
 
 @router.get("/me")
@@ -169,7 +162,7 @@ async def me(user: dict = Depends(get_current_user)):
 
 @router.post("/logout")
 async def logout(response: Response):
-    _clear_auth_cookies(response)
+    _clear_refresh_cookie(response)
     return {"message": "Déconnecté avec succès"}
 
 
@@ -184,7 +177,7 @@ async def refresh(request: Request, response: Response):
     try:
         payload = decode_refresh_token(token)
     except Exception:
-        _clear_auth_cookies(response)
+        _clear_refresh_cookie(response)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token invalide ou expiré",
@@ -194,7 +187,7 @@ async def refresh(request: Request, response: Response):
     repo = UserRepository(db)
     user = repo.get_by_id(payload["sub"])
     if not user:
-        _clear_auth_cookies(response)
+        _clear_refresh_cookie(response)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Utilisateur introuvable",
@@ -203,9 +196,13 @@ async def refresh(request: Request, response: Response):
     jwt_payload = {"sub": user["id"], "email": user["email"], "is_admin": bool(user.get("is_admin", False))}
     new_access = create_jwt(jwt_payload)
     new_refresh = create_refresh_token(jwt_payload)
-    _set_auth_cookies(response, new_access, new_refresh)
+    _set_refresh_cookie(response, new_refresh)
 
-    return {"user": _safe_user(user)}
+    return {
+        "access_token": new_access,
+        "token_type": "bearer",
+        "user": _safe_user(user),
+    }
 
 
 @router.post("/forgot-password")

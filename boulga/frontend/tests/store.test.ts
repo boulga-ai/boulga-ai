@@ -173,18 +173,20 @@ describe("authStore", () => {
   it("setUser met à jour l'utilisateur et isAuthenticated", async () => {
     const { useAuthStore } = await import("@/store/authStore");
     const testUser = { id: "123", email: "test@example.com", name: "Test" } as any;
-    useAuthStore.getState().setUser(testUser);
+    useAuthStore.getState().setUser(testUser, "fake-token");
     expect(useAuthStore.getState().user).toEqual(testUser);
     expect(useAuthStore.getState().isAuthenticated).toBe(true);
+    expect(useAuthStore.getState().getToken()).toBe("fake-token");
   });
 
   it("logout réinitialise l'utilisateur", async () => {
     const { useAuthStore } = await import("@/store/authStore");
     const testUser = { id: "123", email: "test@example.com", name: "Test" } as any;
-    useAuthStore.getState().setUser(testUser);
+    useAuthStore.getState().setUser(testUser, "fake-token");
     await useAuthStore.getState().logout();
     expect(useAuthStore.getState().user).toBeNull();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(useAuthStore.getState().getToken()).toBeNull();
   });
 });
 

@@ -7,15 +7,16 @@ import type { User } from "@/types";
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
+  _accessToken: string | null;
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 interface AuthActions {
-  setUser: (user: User) => void;
+  setUser: (user: User, token: string) => void;
+  getToken: () => string | null;
   logout: () => Promise<void>;
   loadUser: () => Promise<void>;
-  refreshToken: () => Promise<boolean>;
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -23,10 +24,13 @@ interface AuthActions {
 export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   user: null,
   isAuthenticated: false,
+  _accessToken: null,
 
-  setUser: (user: User) => {
-    set({ user, isAuthenticated: true });
+  setUser: (user: User, token: string) => {
+    set({ user, isAuthenticated: true, _accessToken: token });
   },
+
+  getToken: () => get()._accessToken,
 
   logout: async () => {
     try {
@@ -37,51 +41,27 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     } catch {
       // Silencieux — on déconnecte côté client dans tous les cas
     }
-    set({ user: null, isAuthenticated: false });
+    set({ user: null, isAuthenticated: false, _accessToken: null });
   },
 
   loadUser: async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/auth/me`, {
-        credentials: "include",
-      });
-      if (!res.ok) {
-        if (res.status === 401) {
-          const refreshed = await get().refreshToken();
-          if (!refreshed) {
-            set({ user: null, isAuthenticated: false });
-            return;
-          }
-          const retry = await fetch(`${API_URL}/api/auth/me`, {
-            credentials: "include",
-          });
-          if (!retry.ok) {
-            set({ user: null, isAuthenticated: false });
-            return;
-          }
-          const data = await retry.json();
-          set({ user: data, isAuthenticated: true });
-          return;
-        }
-        set({ user: null, isAuthenticated: false });
-        return;
-      }
-      const data = await res.json();
-      set({ user: data, isAuthenticated: true });
-    } catch {
-      set({ user: null, isAuthenticated: false });
-    }
-  },
+    // Déjà authentifié (juste après un login) — ne pas écraser
+    if (get().isAuthenticated) return;
 
-  refreshToken: async () => {
+    // Tentative de refresh silencieux depuis le cookie httpOnly
     try {
       const res = await fetch(`${API_URL}/api/auth/refresh`, {
         method: "POST",
         credentials: "include",
       });
-      return res.ok;
+      if (!res.ok) {
+        set({ user: null, isAuthenticated: false, _accessToken: null });
+        return;
+      }
+      const data = await res.json();
+      set({ user: data.user, isAuthenticated: true, _accessToken: data.access_token });
     } catch {
-      return false;
+      set({ user: null, isAuthenticated: false, _accessToken: null });
     }
   },
 }));

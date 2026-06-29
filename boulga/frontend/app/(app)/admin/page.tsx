@@ -61,8 +61,9 @@ export default function AdminPage() {
     setLoading(true);
     setError(null);
     try {
+      const token = useAuthStore.getState().getToken();
       const res = await fetch(`${API_URL}/api/admin/users`, {
-        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(`Erreur ${res.status}`);
       const data = await res.json();
@@ -83,10 +84,13 @@ export default function AdminPage() {
   const changeTier = async (userId: string, tier: Tier) => {
     setUpdating(userId);
     try {
+      const token = useAuthStore.getState().getToken();
       const res = await fetch(`${API_URL}/api/admin/users/${userId}/subscription`, {
         method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ tier }),
       });
       if (!res.ok) throw new Error(`Erreur ${res.status}`);

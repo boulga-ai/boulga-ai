@@ -8,7 +8,7 @@ import { useAuthStore } from "@/store/authStore";
 
 export default function LoginPage() {
   const router = useRouter();
-  const setUser = useAuthStore((s) => s.setUser);
+  const setUser  = useAuthStore((s) => s.setUser);
 
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
@@ -33,7 +33,7 @@ export default function LoginPage() {
       }
 
       const data = await res.json();
-      setUser(data.user);
+      setUser(data.user, data.access_token);
       router.push("/chat");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur lors de la connexion");

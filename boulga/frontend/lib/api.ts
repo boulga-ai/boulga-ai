@@ -15,33 +15,49 @@ export type { ReferralStats, ReferralHistoryItem };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function jsonHeaders(): HeadersInit {
-  return { "Content-Type": "application/json" };
+function bearerHeader(): Record<string, string> {
+  const { useAuthStore } = require("@/store/authStore");
+  const token: string | null = useAuthStore.getState().getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function tryRefresh(): Promise<boolean> {
+function jsonHeaders(): HeadersInit {
+  return { "Content-Type": "application/json", ...bearerHeader() };
+}
+
+async function tryRefresh(): Promise<string | null> {
   try {
     const res = await fetch(`${API_URL}/api/auth/refresh`, {
       method: "POST",
       credentials: "include",
     });
-    return res.ok;
+    if (!res.ok) return null;
+    const data = await res.json();
+    const { useAuthStore } = require("@/store/authStore");
+    useAuthStore.getState().setUser(data.user, data.access_token);
+    return data.access_token as string;
   } catch {
-    return false;
+    return null;
   }
 }
 
 async function authFetch(input: string, init?: RequestInit): Promise<Response> {
-  const opts: RequestInit = { ...init, credentials: "include" };
+  const opts: RequestInit = {
+    ...init,
+    headers: { ...init?.headers, ...bearerHeader() },
+  };
   let res = await fetch(input, opts);
 
   if (res.status === 401) {
-    const refreshed = await tryRefresh();
-    if (refreshed) {
-      res = await fetch(input, opts);
+    const newToken = await tryRefresh();
+    if (newToken) {
+      res = await fetch(input, {
+        ...init,
+        headers: { ...init?.headers, Authorization: `Bearer ${newToken}` },
+      });
     } else {
-      const { useAuthStore } = await import("@/store/authStore");
-      useAuthStore.getState().logout();
+      const { useAuthStore } = require("@/store/authStore");
+      await useAuthStore.getState().logout();
       if (typeof window !== "undefined") {
         window.location.href = "/auth/login";
       }
@@ -144,7 +160,7 @@ export async function initiatePayment(
 ): Promise<{ payment_url: string }> {
   const res = await authFetch(`${API_URL}/api/payments/initiate`, {
     method: "POST",
-    headers: jsonHeaders(),
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ tier, billing_cycle }),
   });
   return handleResponse<{ payment_url: string }>(res);
@@ -197,7 +213,7 @@ export interface FeedbackPayload {
 export async function postFeedback(payload: FeedbackPayload): Promise<{ id: string }> {
   const res = await authFetch(`${API_URL}/api/feedback`, {
     method: "POST",
-    headers: jsonHeaders(),
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   return handleResponse<{ id: string }>(res);
@@ -213,9 +229,7 @@ export interface SearchResult {
 }
 
 export async function searchConversations(q: string): Promise<SearchResult[]> {
-  const res = await authFetch(
-    `${API_URL}/api/search?q=${encodeURIComponent(q)}`,
-  );
+  const res = await authFetch(`${API_URL}/api/search?q=${encodeURIComponent(q)}`);
   return handleResponse<SearchResult[]>(res);
 }
 
@@ -229,7 +243,7 @@ export async function getReferralStats(): Promise<ReferralStats> {
 export async function sendReferralInvite(email: string): Promise<void> {
   const res = await authFetch(`${API_URL}/api/referrals/invite`, {
     method: "POST",
-    headers: jsonHeaders(),
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email }),
   });
   await handleResponse<{ sent: boolean }>(res);

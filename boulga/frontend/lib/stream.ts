@@ -1,4 +1,10 @@
 import { API_URL } from "@/lib/constants";
+import { useAuthStore } from "@/store/authStore";
+
+function authHeader(): Record<string, string> {
+  const token = useAuthStore.getState().getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -53,8 +59,7 @@ export function streamChat(
     try {
       res = await fetch(`${API_URL}/api/chat`, {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeader() },
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
@@ -195,8 +200,7 @@ export function streamCompare(
     try {
       res = await fetch(`${API_URL}/api/compare`, {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeader() },
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
