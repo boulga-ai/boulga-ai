@@ -16,6 +16,8 @@ import {
   IconGift,
   IconClock,
 } from "@tabler/icons-react";
+import { useRouter } from "next/navigation";
+import { useAuthStore } from "@/store/authStore";
 import { API_URL } from "@/lib/constants";
 import { getAgents, getMyAgents, assignAgent, unassignAgent, getReferralStats, sendReferralInvite } from "@/lib/api";
 import type { Agent, UserAgent, ReferralStats } from "@/types";
@@ -643,6 +645,9 @@ function WhatsAppSection({ isSourcePlus }: { isSourcePlus: boolean }) {
 // ── SettingsPage ──────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
+  const router = useRouter();
+  const authLogout = useAuthStore((s) => s.logout);
+
   const [name, setName] = useState(STUB_USER.name);
   const [birthdate, setBirthdate] = useState(STUB_USER.birthdate);
   const [locale, setLocale] = useState(STUB_USER.locale);
@@ -845,7 +850,14 @@ export default function SettingsPage() {
 
         {/* Déconnexion */}
         <div className="pt-2 pb-8">
-          <button className="text-error text-ui font-body font-medium hover:underline transition-colors duration-100">
+          <button
+            type="button"
+            onClick={async () => {
+              await authLogout();
+              router.push("/auth/login");
+            }}
+            className="text-error text-ui font-body font-medium hover:underline transition-colors duration-100"
+          >
             Se déconnecter
           </button>
         </div>

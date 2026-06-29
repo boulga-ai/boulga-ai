@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     JWT_EXPIRE_MINUTES: int = 60
     JWT_REFRESH_EXPIRE_DAYS: int = 30
 
+    # Cookie
+    COOKIE_DOMAIN: str = ""
+    COOKIE_SAMESITE: str = "lax"
+
     # Resend
     RESEND_API_KEY: str = ""
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore, getStoredToken } from "@/store/authStore";
+import { useAuthStore } from "@/store/authStore";
 import { API_URL } from "@/lib/constants";
 import type { Tier } from "@/types";
 
@@ -58,13 +58,11 @@ export default function AdminPage() {
   }, [user, router]);
 
   const fetchUsers = useCallback(async () => {
-    const token = getStoredToken();
-    if (!token) return;
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(`${API_URL}/api/admin/users`, {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
       });
       if (!res.ok) throw new Error(`Erreur ${res.status}`);
       const data = await res.json();
@@ -83,16 +81,12 @@ export default function AdminPage() {
   }, [user, fetchUsers]);
 
   const changeTier = async (userId: string, tier: Tier) => {
-    const token = getStoredToken();
-    if (!token) return;
     setUpdating(userId);
     try {
       const res = await fetch(`${API_URL}/api/admin/users/${userId}/subscription`, {
         method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tier }),
       });
       if (!res.ok) throw new Error(`Erreur ${res.status}`);

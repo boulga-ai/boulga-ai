@@ -9,7 +9,6 @@ import {
 } from "@tabler/icons-react";
 import type { Message } from "@/types";
 import { useDocStore } from "@/store/docStore";
-import { getStoredToken } from "@/store/authStore";
 import CodeBlock from "./CodeBlock";
 import Lightbox from "./Lightbox";
 import BubbleActions from "./BubbleActions";
@@ -34,11 +33,8 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 async function downloadFile(url: string, filename: string) {
-  const token = getStoredToken();
   try {
-    const res = await fetch(url, {
-      headers: token && !url.startsWith("https://") ? { Authorization: `Bearer ${token}` } : {},
-    });
+    const res = await fetch(url, { credentials: "include" });
     if (!res.ok) throw new Error();
     const blob = await res.blob();
     downloadBlob(blob, filename);

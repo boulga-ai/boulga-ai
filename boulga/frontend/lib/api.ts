@@ -1,5 +1,4 @@
 import { API_URL } from "@/lib/constants";
-import { getStoredToken } from "@/store/authStore";
 import type {
   LLM,
   Conversation,
@@ -16,13 +15,40 @@ export type { ReferralStats, ReferralHistoryItem };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function authHeader(): Record<string, string> {
-  const token = getStoredToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+function jsonHeaders(): HeadersInit {
+  return { "Content-Type": "application/json" };
 }
 
-function jsonHeaders(): HeadersInit {
-  return { "Content-Type": "application/json", ...authHeader() };
+async function tryRefresh(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/api/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function authFetch(input: string, init?: RequestInit): Promise<Response> {
+  const opts: RequestInit = { ...init, credentials: "include" };
+  let res = await fetch(input, opts);
+
+  if (res.status === 401) {
+    const refreshed = await tryRefresh();
+    if (refreshed) {
+      res = await fetch(input, opts);
+    } else {
+      const { useAuthStore } = await import("@/store/authStore");
+      useAuthStore.getState().logout();
+      if (typeof window !== "undefined") {
+        window.location.href = "/auth/login";
+      }
+    }
+  }
+
+  return res;
 }
 
 async function handleResponse<T>(res: Response): Promise<T> {
@@ -47,23 +73,18 @@ export async function getLLMs(): Promise<LLM[]> {
 }
 
 export async function getConversations(): Promise<Conversation[]> {
-  const res = await fetch(`${API_URL}/api/conversations`, {
-    headers: authHeader(),
-  });
+  const res = await authFetch(`${API_URL}/api/conversations`);
   return handleResponse<Conversation[]>(res);
 }
 
 export async function getConversation(id: string): Promise<ConversationDetail> {
-  const res = await fetch(`${API_URL}/api/conversations/${id}`, {
-    headers: authHeader(),
-  });
+  const res = await authFetch(`${API_URL}/api/conversations/${id}`);
   return handleResponse<ConversationDetail>(res);
 }
 
 export async function deleteConversation(id: string): Promise<void> {
-  const res = await fetch(`${API_URL}/api/conversations/${id}`, {
+  const res = await authFetch(`${API_URL}/api/conversations/${id}`, {
     method: "DELETE",
-    headers: authHeader(),
   });
   if (!res.ok) {
     let message = `Erreur ${res.status}`;
@@ -76,27 +97,22 @@ export async function deleteConversation(id: string): Promise<void> {
 }
 
 export async function getUserFiles(): Promise<UserFile[]> {
-  const res = await fetch(`${API_URL}/api/files`, {
-    headers: authHeader(),
-  });
+  const res = await authFetch(`${API_URL}/api/files`);
   return handleResponse<UserFile[]>(res);
 }
 
 export async function uploadFile(file: globalThis.File): Promise<FileInfo> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${API_URL}/api/files/upload`, {
+  const res = await authFetch(`${API_URL}/api/files/upload`, {
     method: "POST",
-    headers: authHeader(),
     body: form,
   });
   return handleResponse<FileInfo>(res);
 }
 
 export async function downloadFile(id: string): Promise<Blob> {
-  const res = await fetch(`${API_URL}/api/files/${id}/download`, {
-    headers: authHeader(),
-  });
+  const res = await authFetch(`${API_URL}/api/files/${id}/download`);
   if (!res.ok) throw new Error(`Erreur ${res.status} lors du téléchargement`);
   return res.blob();
 }
@@ -116,9 +132,7 @@ export interface SubscriptionInfo {
 }
 
 export async function getSubscription(): Promise<SubscriptionInfo> {
-  const res = await fetch(`${API_URL}/api/subscriptions/me`, {
-    headers: authHeader(),
-  });
+  const res = await authFetch(`${API_URL}/api/subscriptions/me`);
   return handleResponse<SubscriptionInfo>(res);
 }
 
@@ -128,7 +142,7 @@ export async function initiatePayment(
   tier: string,
   billing_cycle: string,
 ): Promise<{ payment_url: string }> {
-  const res = await fetch(`${API_URL}/api/payments/initiate`, {
+  const res = await authFetch(`${API_URL}/api/payments/initiate`, {
     method: "POST",
     headers: jsonHeaders(),
     body: JSON.stringify({ tier, billing_cycle }),
@@ -139,40 +153,32 @@ export async function initiatePayment(
 export async function checkPaymentStatus(
   txn: string,
 ): Promise<{ status: string; tier?: string; billing_cycle?: string }> {
-  const res = await fetch(`${API_URL}/api/payments/status?txn=${encodeURIComponent(txn)}`, {
-    headers: authHeader(),
-  });
+  const res = await authFetch(`${API_URL}/api/payments/status?txn=${encodeURIComponent(txn)}`);
   return handleResponse(res);
 }
 
 // ── Agents ────────────────────────────────────────────────────────────────────
 
 export async function getAgents(): Promise<Agent[]> {
-  const res = await fetch(`${API_URL}/api/agents`, {
-    headers: authHeader(),
-  });
+  const res = await authFetch(`${API_URL}/api/agents`);
   return handleResponse<Agent[]>(res);
 }
 
 export async function getMyAgents(): Promise<UserAgent[]> {
-  const res = await fetch(`${API_URL}/api/agents/me`, {
-    headers: authHeader(),
-  });
+  const res = await authFetch(`${API_URL}/api/agents/me`);
   return handleResponse<UserAgent[]>(res);
 }
 
 export async function assignAgent(agentId: string): Promise<UserAgent> {
-  const res = await fetch(`${API_URL}/api/agents/${agentId}/assign`, {
+  const res = await authFetch(`${API_URL}/api/agents/${agentId}/assign`, {
     method: "POST",
-    headers: authHeader(),
   });
   return handleResponse<UserAgent>(res);
 }
 
 export async function unassignAgent(agentId: string): Promise<void> {
-  const res = await fetch(`${API_URL}/api/agents/${agentId}/unassign`, {
+  const res = await authFetch(`${API_URL}/api/agents/${agentId}/unassign`, {
     method: "DELETE",
-    headers: authHeader(),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -189,7 +195,7 @@ export interface FeedbackPayload {
 }
 
 export async function postFeedback(payload: FeedbackPayload): Promise<{ id: string }> {
-  const res = await fetch(`${API_URL}/api/feedback`, {
+  const res = await authFetch(`${API_URL}/api/feedback`, {
     method: "POST",
     headers: jsonHeaders(),
     body: JSON.stringify(payload),
@@ -207,9 +213,8 @@ export interface SearchResult {
 }
 
 export async function searchConversations(q: string): Promise<SearchResult[]> {
-  const res = await fetch(
+  const res = await authFetch(
     `${API_URL}/api/search?q=${encodeURIComponent(q)}`,
-    { headers: authHeader() },
   );
   return handleResponse<SearchResult[]>(res);
 }
@@ -217,14 +222,12 @@ export async function searchConversations(q: string): Promise<SearchResult[]> {
 // ── Parrainage ────────────────────────────────────────────────────────────────
 
 export async function getReferralStats(): Promise<ReferralStats> {
-  const res = await fetch(`${API_URL}/api/referrals/stats`, {
-    headers: authHeader(),
-  });
+  const res = await authFetch(`${API_URL}/api/referrals/stats`);
   return handleResponse<ReferralStats>(res);
 }
 
 export async function sendReferralInvite(email: string): Promise<void> {
-  const res = await fetch(`${API_URL}/api/referrals/invite`, {
+  const res = await authFetch(`${API_URL}/api/referrals/invite`, {
     method: "POST",
     headers: jsonHeaders(),
     body: JSON.stringify({ email }),

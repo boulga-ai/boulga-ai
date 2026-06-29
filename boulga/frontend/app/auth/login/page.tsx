@@ -8,7 +8,7 @@ import { useAuthStore } from "@/store/authStore";
 
 export default function LoginPage() {
   const router = useRouter();
-  const login  = useAuthStore((s) => s.login);
+  const setUser = useAuthStore((s) => s.setUser);
 
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
@@ -22,6 +22,7 @@ export default function LoginPage() {
     try {
       const res = await fetch(`${API_URL}/api/auth/login`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
@@ -32,7 +33,7 @@ export default function LoginPage() {
       }
 
       const data = await res.json();
-      login(data.user, data.access_token);
+      setUser(data.user);
       router.push("/chat");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur lors de la connexion");
@@ -95,7 +96,16 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="mt-6 text-center text-caption font-body text-neutral-text-secondary">
+          <div className="mt-4 text-center">
+            <Link
+              href="/auth/forgot-password"
+              className="text-caption font-body text-blue-700 hover:underline"
+            >
+              Mot de passe oublié ?
+            </Link>
+          </div>
+
+          <p className="mt-4 text-center text-caption font-body text-neutral-text-secondary">
             Pas encore de compte ?{" "}
             <Link
               href="/auth/register"

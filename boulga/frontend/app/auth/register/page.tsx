@@ -19,7 +19,7 @@ function RegisterContent() {
   const [password, setPassword]   = useState("");
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
-  const login = useAuthStore((s) => s.login);
+  const setUser = useAuthStore((s) => s.setUser);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -47,7 +47,7 @@ function RegisterContent() {
       }
 
       const data = await res.json();
-      login(data.user, data.access_token);
+      setUser(data.user);
       router.push("/chat");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur lors de l'inscription");

@@ -1,5 +1,4 @@
 import { API_URL } from "@/lib/constants";
-import { getStoredToken } from "@/store/authStore";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -54,10 +53,8 @@ export function streamChat(
     try {
       res = await fetch(`${API_URL}/api/chat`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(getStoredToken() ? { Authorization: `Bearer ${getStoredToken()}` } : {}),
-        },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
@@ -198,10 +195,8 @@ export function streamCompare(
     try {
       res = await fetch(`${API_URL}/api/compare`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(getStoredToken() ? { Authorization: `Bearer ${getStoredToken()}` } : {}),
-        },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
