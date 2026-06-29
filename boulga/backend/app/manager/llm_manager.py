@@ -1,3 +1,4 @@
+# boulga/backend/app/manager/llm_manager.py
 import base64
 import json
 import logging
@@ -90,6 +91,20 @@ async def _completion_with_fallback(kwargs: dict):
 def _or_model(model_id: str) -> str:
     name = _OPENROUTER_MODELS.get(model_id, model_id)
     return f"openrouter/{name}"
+
+
+def _tools_with_cache(tools: list[dict]) -> list[dict]:
+    """Pose un breakpoint cache_control sur la dernière définition d'outil.
+
+    Le schéma d'outil (GENERATE_DOCUMENT_TOOL) est stable entre les tours ; le
+    marquer permet aux providers qui le supportent de mettre en cache la partie
+    `tools` du préfixe. Copie défensive pour ne pas muter la constante partagée.
+    """
+    if not tools:
+        return tools
+    cached = [dict(t) for t in tools]
+    cached[-1] = {**cached[-1], "cache_control": {"type": "ephemeral"}}
+    return cached
 
 
 GENERATE_DOCUMENT_TOOL: dict = {
@@ -260,7 +275,19 @@ class LLMManager:
         result: list[dict] = []
 
         if system_prompt:
-            result.append({"role": "system", "content": system_prompt})
+            # cache_control "ephemeral" sur le bloc de contenu system : les providers
+            # qui le supportent (Anthropic, Gemini via OpenRouter) mettent en cache ce
+            # préfixe stable ; les autres ignorent simplement le champ.
+            result.append({
+                "role": "system",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": system_prompt,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            })
 
         for msg in messages:
             role = msg.get("role", "user")
@@ -353,7 +380,7 @@ class LLMManager:
             "timeout": 600,
         }
         if tools:
-            kwargs["tools"] = tools
+            kwargs["tools"] = _tools_with_cache(tools)
             kwargs["tool_choice"] = "auto"
 
         response = await _completion_with_fallback(kwargs)
