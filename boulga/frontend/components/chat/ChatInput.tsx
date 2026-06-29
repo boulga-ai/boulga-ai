@@ -127,14 +127,21 @@ export default function ChatInput() {
     setUploadError(null);
     setUploading(true);
 
+    // Uploads en parallèle : N fichiers = N requêtes simultanées au lieu de
+    // N allers-retours en série avant le démarrage du stream.
+    const results = await Promise.allSettled(
+      pendingFiles.map((pf) => uploadFile(pf.file)),
+    );
+
     const fileIds: string[] = [];
-    for (const pf of pendingFiles) {
-      try {
-        const result = await uploadFile(pf.file);
-        fileIds.push(result.id);
-      } catch (err) {
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      if (result.status === "fulfilled") {
+        fileIds.push(result.value.id);
+      } else {
+        const reason = result.reason;
         setUploadError(
-          `Erreur upload "${pf.name}" : ${err instanceof Error ? err.message : "inconnu"}`,
+          `Erreur upload "${pendingFiles[i].name}" : ${reason instanceof Error ? reason.message : "inconnu"}`,
         );
         setUploading(false);
         return;
