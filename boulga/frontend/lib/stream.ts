@@ -168,7 +168,11 @@ export function streamChat(
     } finally {
       reader.releaseLock();
     }
-  })();
+  })().catch((err: unknown) => {
+    if ((err as { name?: string }).name !== "AbortError") {
+      handlers.onError("Une erreur inattendue est survenue.");
+    }
+  });
 
   return controller;
 }

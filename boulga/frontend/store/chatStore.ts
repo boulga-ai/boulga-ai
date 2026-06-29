@@ -475,11 +475,16 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
   },
 
   newConversation: () => {
+    const { _abortController } = get();
+    if (_abortController) {
+      _abortController.abort();
+    }
     set({
       currentConversationId: null,
       messages: [],
       streamingText: "",
       isStreaming: false,
+      _abortController: null,
     });
   },
 
