@@ -7,6 +7,21 @@ function authHeader(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+async function tryRefresh(): Promise<string | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    useAuthStore.getState().setUser(data.user, data.access_token);
+    return data.access_token as string;
+  } catch {
+    return null;
+  }
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface ChatPayload {
@@ -71,6 +86,28 @@ export function streamChat(
       if ((err as { name?: string }).name === "AbortError") return;
       handlers.onError("Impossible de joindre le serveur.");
       return;
+    }
+
+    // Token d'accès expiré : un seul essai de refresh silencieux avant d'abandonner,
+    // comme le fait déjà authFetch() pour les autres routes (api.ts).
+    if (res.status === 401) {
+      const newToken = await tryRefresh();
+      if (!newToken) {
+        handlers.onError("Session expirée. Veuillez vous reconnecter.");
+        return;
+      }
+      try {
+        res = await fetch(`${API_URL}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${newToken}` },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+      } catch (err: unknown) {
+        if ((err as { name?: string }).name === "AbortError") return;
+        handlers.onError("Impossible de joindre le serveur.");
+        return;
+      }
     }
 
     if (!res.ok) {

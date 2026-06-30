@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     # Cookie
     COOKIE_DOMAIN: str = ""
-    COOKIE_SAMESITE: str = "lax"
+    COOKIE_SAMESITE: str = "none"
 
     # Resend
     RESEND_API_KEY: str = ""
