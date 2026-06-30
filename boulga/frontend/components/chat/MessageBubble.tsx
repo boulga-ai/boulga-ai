@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
@@ -333,6 +333,22 @@ export default function MessageBubble({
   const hasSteps = agentSteps.length > 0;
   const isThinking = isStreaming && !content && !hasSteps;
 
+  // Affiche l'indicateur de réflexion uniquement après 800ms d'attente
+  // Les réponses rapides (bonjour, etc.) ne le verront jamais
+  const [showThinking, setShowThinking] = useState(false);
+  const thinkingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (isThinking) {
+      thinkingTimer.current = setTimeout(() => setShowThinking(true), 800);
+    } else {
+      if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
+      setShowThinking(false);
+    }
+    return () => {
+      if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
+    };
+  }, [isThinking]);
+
   return (
     <>
       {lightboxSrc && (
@@ -353,7 +369,7 @@ export default function MessageBubble({
             className="bg-neutral-white px-4 py-3 text-[15px] text-marine"
             style={{ borderRadius: "12px", border: "0.5px solid #E0E4EC" }}
           >
-            {isThinking ? (
+            {showThinking ? (
               <p className="text-[13px] font-body italic" style={{ color: "#94A3B8" }}>
                 Je réfléchis à votre demande…
               </p>
