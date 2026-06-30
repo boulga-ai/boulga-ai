@@ -52,12 +52,13 @@ async def chat(
                 try:
                     item = await asyncio.wait_for(queue.get(), timeout=_KEEPALIVE_INTERVAL)
                 except asyncio.TimeoutError:
-                    yield ": keepalive\n\n"
+                    yield sse_event({"type": "ping"})
                     continue
 
                 if item is _SENTINEL:
                     break
                 yield sse_event(item)
+
         finally:
             if not task.done():
                 task.cancel()
