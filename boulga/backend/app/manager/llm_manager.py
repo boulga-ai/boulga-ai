@@ -1,6 +1,5 @@
 # boulga/backend/app/manager/llm_manager.py
 import base64
-import json
 import logging
 import re as _re
 from typing import AsyncIterator, Optional
@@ -91,165 +90,6 @@ async def _completion_with_fallback(kwargs: dict):
 def _or_model(model_id: str) -> str:
     name = _OPENROUTER_MODELS.get(model_id, model_id)
     return f"openrouter/{name}"
-
-
-def _tools_with_cache(tools: list[dict]) -> list[dict]:
-    """Pose un breakpoint cache_control sur la dernière définition d'outil.
-
-    Le schéma d'outil (GENERATE_DOCUMENT_TOOL) est stable entre les tours ; le
-    marquer permet aux providers qui le supportent de mettre en cache la partie
-    `tools` du préfixe. Copie défensive pour ne pas muter la constante partagée.
-    """
-    if not tools:
-        return tools
-    cached = [dict(t) for t in tools]
-    cached[-1] = {**cached[-1], "cache_control": {"type": "ephemeral"}}
-    return cached
-
-
-GENERATE_DOCUMENT_TOOL: dict = {
-    "type": "function",
-    "function": {
-        "name": "generate_document",
-        "description": (
-            "Génère un fichier Word (DOCX) ou PDF structuré et mis en page. "
-            "Utilise cet outil quand l'utilisateur demande de créer, "
-            "générer ou exporter un document."
-        ),
-        "parameters": {
-            "type": "object",
-            "required": ["format", "filename", "template", "blocks"],
-            "additionalProperties": False,
-            "properties": {
-                "format": {
-                    "type": "string",
-                    "enum": ["docx", "pdf", "xlsx"],
-                    "description": (
-                        "Format de sortie : "
-                        "docx (Word — le plus courant, mise en page riche) ; "
-                        "pdf (PDF — lecture, partage, impression) ; "
-                        "xlsx (Excel — données tabulaires, tableaux de bord, reporting chiffré)."
-                    ),
-                },
-                "filename": {
-                    "type": "string",
-                    "description": "Nom du fichier sans extension (ex: rapport-marketing-q3).",
-                },
-                "template": {
-                    "type": "string",
-                    "enum": ["commercial", "rapport", "contrat", "rh", "minimal"],
-                    "description": (
-                        "Template de mise en page : "
-                        "commercial (proposition, offre, devis, présentation client) ; "
-                        "rapport (analyse, audit, bilan, reporting chiffré) ; "
-                        "contrat (accord, convention, CGV, lettre formelle) ; "
-                        "rh (fiche de poste, contrat de travail, note interne) ; "
-                        "minimal (note simple, document court sans page de garde)."
-                    ),
-                },
-                "primary_color": {
-                    "type": "string",
-                    "description": (
-                        "Couleur principale hex optionnelle (ex: #1565C0). "
-                        "Remplace la couleur primaire du template si fournie. "
-                        "À utiliser si l'utilisateur mentionne ses couleurs de marque."
-                    ),
-                },
-                "company_name": {
-                    "type": "string",
-                    "description": (
-                        "Nom de l'entreprise ou de l'organisation, "
-                        "affiché dans l'en-tête courant. Optionnel."
-                    ),
-                },
-                "blocks": {
-                    "type": "array",
-                    "description": "Liste ordonnée de blocs de contenu du document.",
-                    "items": {
-                        "type": "object",
-                        "required": ["type"],
-                        "additionalProperties": False,
-                        "properties": {
-                            "type": {
-                                "type": "string",
-                                "enum": [
-                                    "cover_page",
-                                    "header_block",
-                                    "heading",
-                                    "paragraph",
-                                    "bullet_list",
-                                    "numbered_list",
-                                    "table",
-                                    "colored_section",
-                                    "callout",
-                                    "page_break",
-                                    "divider",
-                                ],
-                                "description": (
-                                    "cover_page: page de garde complète (toujours en PREMIER bloc) — "
-                                    "title, subtitle, author, institution, date, reference, doc_type. "
-                                    "header_block: titre compact sans page de garde (pour notes courtes). "
-                                    "heading: titre de section (level 1-3). "
-                                    "paragraph: texte courant. "
-                                    "bullet_list: liste à puces (style: dot|star|square|check|arrow). "
-                                    "numbered_list: liste numérotée. "
-                                    "table: tableau avec en-têtes et lignes. "
-                                    "colored_section: bloc avec fond coloré (titre + texte). "
-                                    "callout: encadré sémantique (callout_type + label + text). "
-                                    "page_break: saut de page. "
-                                    "divider: ligne de séparation."
-                                ),
-                            },
-                            "text":        {"type": "string"},
-                            "level":       {"type": "integer", "minimum": 1, "maximum": 3},
-                            "title":       {"type": "string"},
-                            "subtitle":    {"type": "string"},
-                            "reference":   {"type": "string"},
-                            "date":        {"type": "string"},
-                            "label":       {"type": "string"},
-                            "author":      {"type": "string", "description": "Auteur (pour cover_page)."},
-                            "institution": {"type": "string", "description": "Entreprise ou institution (pour cover_page)."},
-                            "doc_type":    {"type": "string", "description": "Catégorie du document (pour cover_page), ex: RAPPORT D'ACTIVITE, PROPOSITION COMMERCIALE."},
-                            "style": {
-                                "type": "string",
-                                "enum": ["dot", "star", "square", "check", "arrow"],
-                                "description": "Style de puce pour bullet_list.",
-                            },
-                            "callout_type": {
-                                "type": "string",
-                                "enum": ["info", "tip", "warning", "danger", "success", "note"],
-                                "description": (
-                                    "Type sémantique pour callout : "
-                                    "info (bleu — information neutre, contexte, définition) ; "
-                                    "tip (vert — conseil pratique, bonne pratique, astuce) ; "
-                                    "warning (orange — mise en garde, précaution) ; "
-                                    "danger (rouge — erreur critique, risque, blocage) ; "
-                                    "success (vert clair — résultat positif, validation) ; "
-                                    "note (gris — annotation, remarque secondaire)."
-                                ),
-                            },
-                            "items": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                            },
-                            "headers": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                            },
-                            "rows": {
-                                "type": "array",
-                                "items": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                },
-                            },
-                        },
-                    },
-                },
-            },
-        },
-    },
-}
 
 
 class LLMManager:
@@ -346,90 +186,21 @@ class LLMManager:
         }
         response = await _completion_with_fallback(kwargs)
 
-        async for chunk in response:
-            delta = chunk.choices[0].delta
-            if delta and delta.content:
-                yield {"type": "text", "text": delta.content}
-
-    # ── Streaming texte + tools ────────────────────────────────────────────
-
-    async def stream_chat_with_tools(
-        self,
-        provider: str,
-        model_id: str,
-        messages: list[dict],
-        system_prompt: str = "",
-        files: Optional[list[dict]] = None,
-        effort: str = "medium",
-        tools: Optional[list[dict]] = None,
-    ) -> AsyncIterator[dict]:
-        self._check_provider_model(provider, model_id)
-
-        litellm_messages = self._build_messages(messages, system_prompt, files)
-
-        max_tokens = _max_tokens(model_id)
-        logger.debug("LLM stream_chat_with_tools model=%s provider=%s", model_id, provider)
-        kwargs: dict = {
-            "model": _or_model(model_id),
-            "messages": litellm_messages,
-            "stream": True,
-            "temperature": _OR_TEMPERATURE.get(effort, 0.5),
-            "max_tokens": max_tokens,
-            "api_key": settings.OPENROUTER_API_KEY,
-            "extra_headers": _OR_HEADERS,
-            "timeout": 600,
-        }
-        if tools:
-            kwargs["tools"] = _tools_with_cache(tools)
-            kwargs["tool_choice"] = "auto"
-
-        response = await _completion_with_fallback(kwargs)
-
-        tool_call_name = ""
-        tool_call_args = ""
         finish_reason: str | None = None
 
         async for chunk in response:
             choice = chunk.choices[0]
             delta = choice.delta
-
             if delta and delta.content:
                 yield {"type": "text", "text": delta.content}
-
-            if delta and delta.tool_calls:
-                for tc in delta.tool_calls:
-                    if tc.function and tc.function.name:
-                        tool_call_name = tc.function.name
-                    if tc.function and tc.function.arguments:
-                        tool_call_args += tc.function.arguments
-
             if choice.finish_reason:
                 finish_reason = choice.finish_reason
-
-        logger.info(
-            "stream_chat_with_tools finished: finish_reason=%s tool_name=%s args_len=%d",
-            finish_reason, tool_call_name or "(none)", len(tool_call_args),
-        )
 
         if finish_reason == "length":
             yield {
                 "type": "text",
                 "text": "\n\n⚠️ La réponse a été tronquée. Essaie avec une demande plus courte.",
             }
-
-        if tool_call_name and tool_call_args:
-            try:
-                parsed = json.loads(tool_call_args)
-                yield {"type": "tool_call", "name": tool_call_name, "arguments": parsed}
-            except json.JSONDecodeError:
-                logger.warning(
-                    "Tool call JSON tronqué pour %s (len=%d, finish_reason=%s)",
-                    tool_call_name, len(tool_call_args), finish_reason,
-                )
-                yield {
-                    "type": "text",
-                    "text": "\n\n⚠️ La génération du document a échoué (réponse tronquée). Réessaie en simplifiant ta demande.",
-                }
 
     # ── Non-streaming texte ──────────────────────────────────────────────
 

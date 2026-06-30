@@ -15,7 +15,7 @@ from app.core.stream_errors import StreamErrorCode, stream_error
 from app.db.repositories.conversation_repository import ConversationRepository
 from app.db.repositories.message_repository import MessageRepository
 from app.db.session import get_supabase
-from app.manager.llm_manager import GENERATE_DOCUMENT_TOOL, llm_manager
+from app.manager.llm_manager import llm_manager
 from app.manager.router_agent import router_agent
 from app.prompts.chat_prompts import TITLE_GENERATION_PROMPT
 from app.prompts.tool_prompts import get_full_system_prompt
@@ -222,19 +222,18 @@ class ChatService:
 
         # f. Appel LLM — streaming avec détection délimiteur document
         full_response = ""
-        tool_call_event: dict | None = None
         _doc_parts: list[str] | None = None
         _pending = ""
 
         try:
-            async for event in llm_manager.stream_chat_with_tools(
+            async for event in llm_manager.stream_chat(
                 provider=provider,
                 model_id=model_id,
                 messages=llm_messages,
                 system_prompt=system_prompt,
                 files=files_arg,
                 effort=effort,
-                tools=[GENERATE_DOCUMENT_TOOL],
+                enable_search=enable_search,
             ):
                 if event["type"] == "text":
                     if _doc_parts is not None:
@@ -260,8 +259,6 @@ class ChatService:
                                 full_response += flush
                                 yield {"type": "chunk", "text": flush}
                                 _pending = _pending[safe:]
-                elif event["type"] == "tool_call":
-                    tool_call_event = event
 
         except Exception as exc:
             raw = getattr(exc, "message", str(exc))
@@ -278,16 +275,10 @@ class ChatService:
             yield {"type": "chunk", "text": _pending}
 
         # g. Fallback si le LLM n'a envoyé aucun texte conversationnel
-        if not full_response.strip():
-            if _doc_parts is not None:
-                fallback = "Je génère le document pour vous..."
-                full_response = fallback
-                yield {"type": "chunk", "text": fallback}
-            elif tool_call_event:
-                filename = tool_call_event.get("arguments", {}).get("filename", "document")
-                fallback = f"Je génère le document **{filename}** pour vous..."
-                full_response = fallback
-                yield {"type": "chunk", "text": fallback}
+        if not full_response.strip() and _doc_parts is not None:
+            fallback = "Je génère le document pour vous..."
+            full_response = fallback
+            yield {"type": "chunk", "text": fallback}
 
         # h. Enregistrer réponse assistant
         assistant_msg = await asyncio.to_thread(self._msg_repo.create, {
@@ -298,7 +289,7 @@ class ChatService:
             "model_id": model_id,
         })
 
-        # i. Génération de document (content-based ou tool-based)
+        # i. Génération de document (basée sur le contenu Markdown)
         if _doc_parts is not None:
             raw_doc = "".join(_doc_parts).lstrip()
             if raw_doc:
@@ -309,14 +300,6 @@ class ChatService:
                     message_id=assistant_msg["id"],
                 ):
                     yield file_event
-        elif tool_call_event and tool_call_event.get("name") == "generate_document":
-            async for file_event in self._handle_document_generation(
-                tool_call_event["arguments"],
-                user_id=user_id,
-                conversation_id=conversation_id,
-                message_id=assistant_msg["id"],
-            ):
-                yield file_event
 
         # i. Quota
         try:
@@ -343,88 +326,7 @@ class ChatService:
         # k. Done
         yield {"type": "done", "message_id": assistant_msg["id"]}
 
-    # ── Génération de document ────────────────────────────────────────
-
-    async def _handle_document_generation(
-        self,
-        arguments: dict,
-        user_id: str,
-        conversation_id: str,
-        message_id: str,
-    ) -> AsyncIterator[dict]:
-        from app.services.document_renderer import render_document
-        from app.services.file_service import FileService
-
-        if not await self._quota_svc.is_file_allowed(user_id):
-            yield stream_error(StreamErrorCode.FILE_QUOTA_EXCEEDED)
-            return
-
-        fmt      = arguments.get("format", "docx")
-        raw_name = arguments.get("filename", "document")
-        blocks   = arguments.get("blocks", [])
-        template = arguments.get("template", "minimal")
-        options  = {
-            k: arguments[k]
-            for k in ("primary_color", "company_name")
-            if arguments.get(k)
-        }
-
-        safe_name = raw_name.strip().replace("/", "-").replace("\\", "-")[:80]
-        filename  = f"{safe_name}.{fmt}"
-
-        try:
-            file_bytes, mime_type = await asyncio.to_thread(
-                render_document, blocks, fmt, template, options or None
-            )
-        except Exception as exc:
-            logger.error("Document render failed: %s", exc)
-            return
-
-        try:
-            file_svc = FileService()
-            record = await asyncio.to_thread(
-                file_svc.store_generated_file,
-                user_id=user_id,
-                filename=filename,
-                content=file_bytes,
-                mime_type=mime_type,
-                conversation_id=conversation_id,
-                message_id=message_id,
-            )
-            await self._quota_svc.consume_file(user_id)
-        except Exception as exc:
-            logger.error("File storage failed: %s", exc)
-            return
-
-        file_id = record["id"]
-        download_url = record.get("signed_url") or f"/api/files/{file_id}/download"
-
-        # Persister la référence fichier dans le message pour restauration au reload
-        try:
-            import json as _json
-            from uuid import UUID as _UUID
-            msg = await asyncio.to_thread(self._msg_repo.get_by_id, _UUID(message_id))
-            if msg:
-                tag_data = _json.dumps({
-                    "id": file_id, "name": filename,
-                    "mime": mime_type, "size": len(file_bytes),
-                }, ensure_ascii=False)
-                tag = f"\n<!--file:{tag_data}-->"
-                await asyncio.to_thread(self._msg_repo.update_content, message_id, (msg.get("content") or "") + tag)
-        except Exception:
-            pass
-
-        yield {
-            "type":       "file_ready",
-            "file_id":    file_id,
-            "filename":   filename,
-            "mime_type":  mime_type,
-            "size":       len(file_bytes),
-            "url":        download_url,
-            "message_id": message_id,
-        }
-
-    # ── Génération de document via Markdown étendu (nouveau chemin) ───
+    # ── Génération de document via Markdown étendu ─────────────────────
 
     async def _handle_content_document(
         self,
