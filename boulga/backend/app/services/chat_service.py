@@ -21,6 +21,7 @@ from app.prompts.chat_prompts import TITLE_GENERATION_PROMPT
 from app.prompts.tool_prompts import get_full_system_prompt
 from app.services.quota_service import QuotaService
 from app.services.subscription_service import SubscriptionService
+from app.utils.file_tools import FILE_GENERATION_TOOLS
 
 _ROUTING_TIERS: set[str] = {"source", "fleuve", "ocean"}
 
@@ -220,20 +221,70 @@ class ChatService:
 
         files_arg = binary_files if binary_files else None
 
-        # f. Appel LLM — streaming avec détection délimiteur document
+        # f. Appel LLM — streaming avec outils (file generation) + détection délimiteur
         full_response = ""
         _doc_parts: list[str] | None = None
         _pending = ""
+        _generated_files: list[dict] = []
+
+        async def _tool_executor(name: str, args: dict) -> tuple[str, list[dict]]:
+            """Exécute read_skill ou generate_file et retourne (résultat_llm, events_sse)."""
+            if name == "read_skill":
+                from app.services.skill_service import read_skill
+                content = await asyncio.to_thread(read_skill, args.get("file_type", ""))
+                return content, []
+
+            if name == "generate_file":
+                if not await self._quota_svc.is_file_allowed(user_id):
+                    return "Erreur : quota de fichiers dépassé.", [
+                        stream_error(StreamErrorCode.FILE_QUOTA_EXCEEDED)
+                    ]
+                from app.services.code_execution_service import CodeExecutionService
+                svc = CodeExecutionService()
+                result = await svc.execute(
+                    code=args.get("code", ""),
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    message_id=None,
+                    timeout=120,
+                )
+                events: list[dict] = []
+                if result.error:
+                    return f"Erreur sandbox : {result.error}", events
+                if not result.files:
+                    return f"Exécuté. stdout={result.stdout[:200]}", events
+                for f in result.files:
+                    _generated_files.append(f)
+                    events.append({
+                        "type":      "file_ready",
+                        "file_id":   f.get("file_id"),
+                        "filename":  f.get("name"),
+                        "mime_type": f.get("mime_type"),
+                        "size":      f.get("size_bytes"),
+                        "url":       f.get("signed_url"),
+                        "message_id": None,
+                    })
+                result_summary = (
+                    f"Fichier généré avec succès : {', '.join(f['name'] for f in result.files)}. "
+                    f"stdout={result.stdout[:100]}"
+                )
+                try:
+                    await self._quota_svc.consume_file(user_id)
+                except Exception:
+                    pass
+                return result_summary, events
+
+            return f"Outil inconnu : {name}", []
 
         try:
-            async for event in llm_manager.stream_chat(
+            async for event in llm_manager.stream_chat_with_tools(
                 provider=provider,
                 model_id=model_id,
                 messages=llm_messages,
                 system_prompt=system_prompt,
-                files=files_arg,
+                tools=FILE_GENERATION_TOOLS,
+                tool_executor=_tool_executor,
                 effort=effort,
-                enable_search=enable_search,
             ):
                 if event["type"] == "text":
                     if _doc_parts is not None:
@@ -259,6 +310,8 @@ class ChatService:
                                 full_response += flush
                                 yield {"type": "chunk", "text": flush}
                                 _pending = _pending[safe:]
+                else:
+                    yield event
 
         except Exception as exc:
             raw = getattr(exc, "message", str(exc))
@@ -281,13 +334,31 @@ class ChatService:
             yield {"type": "chunk", "text": fallback}
 
         # h. Enregistrer réponse assistant
+        import json as _json_svc
+        _content_to_save = full_response
+        for _f in _generated_files:
+            _tag = _json_svc.dumps({
+                "id": _f.get("file_id"), "name": _f.get("name"),
+                "mime": _f.get("mime_type"), "size": _f.get("size_bytes"),
+            }, ensure_ascii=False)
+            _content_to_save += f"\n<!--file:{_tag}-->"
+
         assistant_msg = await asyncio.to_thread(self._msg_repo.create, {
             "conversation_id": conversation_id,
             "role":    "assistant",
-            "content": full_response,
+            "content": _content_to_save,
             "provider": provider,
             "model_id": model_id,
         })
+
+        # i-bis. Patch message_id sur les file_ready E2B déjà émis
+        if _generated_files:
+            for _f in _generated_files:
+                yield {
+                    "type":       "file_message_id",
+                    "file_id":    _f.get("file_id"),
+                    "message_id": assistant_msg["id"],
+                }
 
         # i. Génération de document (basée sur le contenu Markdown)
         if _doc_parts is not None:

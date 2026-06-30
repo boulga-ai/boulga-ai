@@ -283,7 +283,7 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
         onFileReady: (info) => {
           useDocStore.getState().addArtifact({
             id: info.file_id,
-            messageId: info.message_id,
+            messageId: info.message_id ?? undefined,
             name: info.filename,
             url: info.url.startsWith("/api/") ? `${API_URL}${info.url}` : info.url,
             mimeType: info.mime_type,
@@ -422,7 +422,7 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
         onFileReady: (info) => {
           useDocStore.getState().addArtifact({
             id: info.file_id,
-            messageId: info.message_id,
+            messageId: info.message_id ?? undefined,
             name: info.filename,
             url: info.url.startsWith("/api/") ? `${API_URL}${info.url}` : info.url,
             mimeType: info.mime_type,

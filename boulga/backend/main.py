@@ -13,6 +13,7 @@ from app.core.exceptions import setup_exception_handlers
 from app.routers import (
     auth, llms, chat, conversations, files, compare, whatsapp,
     payments, subscriptions, agents, referrals, feedback, search, admin,
+    execute,
 )
 
 
@@ -44,6 +45,7 @@ app.include_router(referrals.router)
 app.include_router(feedback.router)
 app.include_router(search.router)
 app.include_router(admin.router)
+app.include_router(execute.router)
 
 
 

@@ -48,6 +48,11 @@ export interface FileReadyInfo {
   mime_type: string;
   size: number;
   url: string;
+  message_id: string | null;
+}
+
+export interface FileMessageIdInfo {
+  file_id: string;
   message_id: string;
 }
 
@@ -58,10 +63,9 @@ export interface StreamHandlers {
   onDocChunk?: (text: string) => void;
   onTitle: (title: string) => void;
   onFileReady?: (info: FileReadyInfo) => void;
+  onFileMessageId?: (info: FileMessageIdInfo) => void;
   onImageNotSupported?: (provider: string, message: string) => void;
   onDone: (messageId: string) => void;
-  // `code` : identifiant d'erreur typé (cf. lib/errorCodes.ts). Absent pour les
-  // erreurs réseau/transport. Repli sur `message` pour la rétrocompat.
   onError: (message: string, code?: string) => void;
 }
 
@@ -187,6 +191,12 @@ export function streamChat(
                 mime_type: event.mime_type as string,
                 size: event.size as number,
                 url: event.url as string,
+                message_id: event.message_id as string | null,
+              });
+              break;
+            case "file_message_id":
+              handlers.onFileMessageId?.({
+                file_id: event.file_id as string,
                 message_id: event.message_id as string,
               });
               break;

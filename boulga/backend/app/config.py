@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
 
+    # E2B (sandbox d'exécution de code)
+    E2B_API_KEY: str = ""
+
     # Supabase
     SUPABASE_URL: str = ""
     SUPABASE_KEY: str = ""

@@ -202,6 +202,121 @@ class LLMManager:
                 "text": "\n\n⚠️ La réponse a été tronquée. Essaie avec une demande plus courte.",
             }
 
+    # ── Streaming avec boucle d'outils (file generation) ─────────────────
+
+    async def stream_chat_with_tools(
+        self,
+        provider: str,
+        model_id: str,
+        messages: list[dict],
+        system_prompt: str = "",
+        tools: Optional[list[dict]] = None,
+        tool_executor=None,
+        effort: str = "medium",
+        enable_search: bool = False,
+    ) -> AsyncIterator[dict]:
+        """
+        Streaming avec boucle agentique : le LLM peut appeler des outils
+        (read_skill, generate_file) et reçoit les résultats pour continuer.
+
+        tool_executor : async callable(name: str, args: dict) -> tuple[str, list[dict]]
+            Retourne (result_str_pour_llm, [events_sse_a_yielder]).
+        """
+        self._check_provider_model(provider, model_id)
+
+        import json as _json
+
+        litellm_messages = self._build_messages(messages, system_prompt)
+        max_tokens = _max_tokens(model_id)
+
+        for _ in range(6):
+            kwargs: dict = {
+                "model": _or_model(model_id),
+                "messages": litellm_messages,
+                "stream": True,
+                "temperature": _OR_TEMPERATURE.get(effort, 0.5),
+                "max_tokens": max_tokens,
+                "api_key": settings.OPENROUTER_API_KEY,
+                "extra_headers": _OR_HEADERS,
+                "timeout": 600,
+            }
+            if tools:
+                kwargs["tools"] = tools
+                kwargs["tool_choice"] = "auto"
+
+            response = await _completion_with_fallback(kwargs)
+
+            text_buffer = ""
+            tool_calls_acc: dict[int, dict] = {}
+            finish_reason: str | None = None
+
+            async for chunk in response:
+                choice = chunk.choices[0]
+                delta = choice.delta
+
+                if delta and delta.content:
+                    text_buffer += delta.content
+                    yield {"type": "text", "text": delta.content}
+
+                if delta and getattr(delta, "tool_calls", None):
+                    for tc in delta.tool_calls:
+                        idx = tc.index
+                        if idx not in tool_calls_acc:
+                            tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                        if tc.id:
+                            tool_calls_acc[idx]["id"] = tc.id
+                        if tc.function:
+                            if tc.function.name:
+                                tool_calls_acc[idx]["name"] = tc.function.name
+                            if tc.function.arguments:
+                                tool_calls_acc[idx]["arguments"] += tc.function.arguments
+
+                if choice.finish_reason:
+                    finish_reason = choice.finish_reason
+
+            if finish_reason == "length":
+                yield {
+                    "type": "text",
+                    "text": "\n\n⚠️ La réponse a été tronquée.",
+                }
+
+            if finish_reason != "tool_calls" or not tool_calls_acc or not tool_executor:
+                break
+
+            # Ajouter le tour assistant avec les tool_calls
+            assistant_turn: dict = {
+                "role": "assistant",
+                "content": text_buffer or None,
+                "tool_calls": [
+                    {
+                        "id": v["id"],
+                        "type": "function",
+                        "function": {"name": v["name"], "arguments": v["arguments"]},
+                    }
+                    for v in (tool_calls_acc[k] for k in sorted(tool_calls_acc))
+                ],
+            }
+            litellm_messages.append(assistant_turn)
+
+            # Exécuter chaque outil et ajouter les résultats
+            for k in sorted(tool_calls_acc):
+                tc_data = tool_calls_acc[k]
+                try:
+                    args = _json.loads(tc_data["arguments"])
+                except Exception:
+                    args = {}
+
+                result_str, sse_events = await tool_executor(tc_data["name"], args)
+
+                for ev in sse_events:
+                    yield ev
+
+                litellm_messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc_data["id"],
+                    "content": result_str,
+                })
+
     # ── Non-streaming texte ──────────────────────────────────────────────
 
     async def generate_text(
