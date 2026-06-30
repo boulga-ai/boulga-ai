@@ -174,7 +174,7 @@ const LLMS = [
     iconBg: "bg-[#F3E8FF]",
     description:
       "Raisonnement structuré, analyse juridique et textes complexes. Reconnu pour sa précision et ses réponses nuancées.",
-    active: false,
+    active: true,
   },
   {
     id: "chatgpt",
@@ -185,7 +185,7 @@ const LLMS = [
     iconBg: "bg-[#E8F5F2]",
     description:
       "Créativité, rédaction et brainstorming. Polyvalent et performant sur une large variété de tâches.",
-    active: false,
+    active: true,
   },
   {
     id: "deepseek",
@@ -196,7 +196,7 @@ const LLMS = [
     iconBg: "bg-[#E3F2FD]",
     description:
       "Code, développement et débogage. Spécialisé dans la génération et l'analyse de code avec une grande rigueur technique.",
-    active: false,
+    active: true,
   },
 ];
 
@@ -477,8 +477,7 @@ export default function LandingPage() {
                       ))}
                     </div>
                   </div>
-                  {/* Claude (coming soon) */}
-                  <div className="px-4 pt-3 opacity-50">
+                  <div className="px-4 pt-3">
                     <div className="flex items-center gap-1.5 mb-3">
                       <div className="w-4 h-4 rounded bg-[#F3E8FF] flex items-center justify-center">
                         <IconBrain size={10} className="text-[#8B5CF6]" />

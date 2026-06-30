@@ -56,11 +56,11 @@ Voix de marque : directe, chaleureuse, concrète, sans jargon, inclusive.
 
 ## LLM et modèles (juin 2026)
 Pour chaque LLM : un modèle économique (low) et un avancé (high).
-- Gemini : gemini-2.5-flash (low), gemini-2.5-pro (high) — ACTIF
-- Claude : claude-haiku-4-5 (low), claude-sonnet-4-6 (high) — à venir
-- ChatGPT : gpt-5.5-instant (low), gpt-5.5-pro (high) — à venir
-- DeepSeek : deepseek-v4-flash (low), deepseek-v4-pro (high) — à venir
-Seul Gemini est actif au lancement. Les autres sont déclarés mais inactifs.
+Tous les providers sont actifs via OpenRouter.
+- Gemini : gemini-2.5-flash (low), gemini-2.5-pro (high)
+- Claude : claude-haiku-4-5 (low), claude-sonnet-4-6 (high)
+- ChatGPT : gpt-5.5-instant (low), gpt-5.5-pro (high)
+- DeepSeek : deepseek-v4-flash (low), deepseek-v4-pro (high)
 
 ## Features différenciantes (avantages exclusifs Boulga)
 
