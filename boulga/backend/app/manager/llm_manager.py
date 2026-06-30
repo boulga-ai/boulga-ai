@@ -306,6 +306,13 @@ class LLMManager:
                 except Exception:
                     args = {}
 
+                yield {
+                    "type": "tool_start",
+                    "id": tc_data["id"],
+                    "tool": tc_data["name"],
+                    "args": args,
+                }
+
                 result_str, sse_events = await tool_executor(tc_data["name"], args)
 
                 for ev in sse_events:

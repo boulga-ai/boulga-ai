@@ -12,7 +12,7 @@ import { API_URL } from "@/lib/constants";
 import { useDocStore } from "@/store/docStore";
 import { useSubscriptionStore } from "@/store/subscriptionStore";
 import { useToastStore } from "@/store/toastStore";
-import type { Conversation, Message, LLM, EffortLevel } from "@/types";
+import type { Conversation, Message, LLM, EffortLevel, AgentStep } from "@/types";
 
 const LONG_RESPONSE_WORDS = 500;
 
@@ -71,6 +71,9 @@ interface ChatState {
   // Recherche web
   enableSearch: boolean;
 
+  // Étapes agentiques (tool calls visibles pendant le streaming)
+  agentSteps: AgentStep[];
+
   // AbortController courant (non exposé directement)
   _abortController: AbortController | null;
 }
@@ -112,6 +115,7 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
   routingInfo: null,
   effort: "medium",
   enableSearch: false,
+  agentSteps: [],
   _abortController: null,
 
   // ── Actions ──────────────────────────────────────────────────────────
@@ -231,6 +235,7 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
       isStreaming: true,
       streamingText: "",
       routingInfo: null,
+      agentSteps: [],
     }));
 
     const controller = streamChat(
@@ -289,6 +294,32 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
             mimeType: info.mime_type,
             size: info.size,
             createdAt: Date.now(),
+          });
+        },
+
+        onToolStart: (id, tool, args) => {
+          set((s) => ({
+            agentSteps: [
+              ...s.agentSteps,
+              { id, tool, status: "running" as const, args },
+            ],
+          }));
+        },
+
+        onToolResult: (tool, success, detail) => {
+          set((s) => {
+            const steps = [...s.agentSteps];
+            for (let i = steps.length - 1; i >= 0; i--) {
+              if (steps[i].tool === tool && steps[i].status === "running") {
+                steps[i] = {
+                  ...steps[i],
+                  status: success ? ("done" as const) : ("error" as const),
+                  detail,
+                };
+                break;
+              }
+            }
+            return { agentSteps: steps };
           });
         },
 

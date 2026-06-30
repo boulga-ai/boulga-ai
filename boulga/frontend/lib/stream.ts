@@ -65,6 +65,8 @@ export interface StreamHandlers {
   onFileReady?: (info: FileReadyInfo) => void;
   onFileMessageId?: (info: FileMessageIdInfo) => void;
   onImageNotSupported?: (provider: string, message: string) => void;
+  onToolStart?: (id: string, tool: string, args: Record<string, unknown>) => void;
+  onToolResult?: (tool: string, success: boolean, detail: Record<string, unknown>) => void;
   onDone: (messageId: string) => void;
   onError: (message: string, code?: string) => void;
 }
@@ -199,6 +201,24 @@ export function streamChat(
                 file_id: event.file_id as string,
                 message_id: event.message_id as string,
               });
+              break;
+            case "tool_start":
+              handlers.onToolStart?.(
+                event.id as string,
+                event.tool as string,
+                (event.args ?? {}) as Record<string, unknown>,
+              );
+              break;
+            case "tool_result":
+              handlers.onToolResult?.(
+                event.tool as string,
+                event.success as boolean,
+                {
+                  output: event.output,
+                  error: event.error,
+                  filename: event.filename,
+                },
+              );
               break;
             case "image_not_supported":
               handlers.onImageNotSupported?.(

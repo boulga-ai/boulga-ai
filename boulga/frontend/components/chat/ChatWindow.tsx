@@ -31,6 +31,7 @@ export default function ChatWindow() {
   const messages = useChatStore((s) => s.messages);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const streamingText = useChatStore((s) => s.streamingText);
+  const agentSteps = useChatStore((s) => s.agentSteps);
 
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -62,6 +63,7 @@ export default function ChatWindow() {
               message={message}
               isStreaming={isThisStreaming}
               streamingText={isThisStreaming ? streamingText : undefined}
+              agentSteps={isThisStreaming ? agentSteps : undefined}
             />
           );
         })}

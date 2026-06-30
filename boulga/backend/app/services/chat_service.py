@@ -232,12 +232,16 @@ class ChatService:
             if name == "read_skill":
                 from app.services.skill_service import read_skill
                 content = await asyncio.to_thread(read_skill, args.get("file_type", ""))
-                return content, []
+                return content, [
+                    {"type": "tool_result", "tool": name, "success": True, "output": ""},
+                ]
 
             if name == "generate_file":
                 if not await self._quota_svc.is_file_allowed(user_id):
                     return "Erreur : quota de fichiers dépassé.", [
-                        stream_error(StreamErrorCode.FILE_QUOTA_EXCEEDED)
+                        stream_error(StreamErrorCode.FILE_QUOTA_EXCEEDED),
+                        {"type": "tool_result", "tool": name, "success": False,
+                         "error": "Quota de génération de fichiers atteint."},
                     ]
                 from app.services.code_execution_service import CodeExecutionService
                 svc = CodeExecutionService()
@@ -250,8 +254,16 @@ class ChatService:
                 )
                 events: list[dict] = []
                 if result.error:
+                    events.append({
+                        "type": "tool_result", "tool": name, "success": False,
+                        "error": result.error[:300],
+                    })
                     return f"Erreur sandbox : {result.error}", events
                 if not result.files:
+                    events.append({
+                        "type": "tool_result", "tool": name, "success": True,
+                        "output": result.stdout[:200],
+                    })
                     return f"Exécuté. stdout={result.stdout[:200]}", events
                 for f in result.files:
                     _generated_files.append(f)
@@ -264,6 +276,11 @@ class ChatService:
                         "url":       f.get("signed_url"),
                         "message_id": None,
                     })
+                events.append({
+                    "type": "tool_result", "tool": name, "success": True,
+                    "output": result.stdout[:200],
+                    "filename": result.files[0]["name"] if result.files else "",
+                })
                 result_summary = (
                     f"Fichier généré avec succès : {', '.join(f['name'] for f in result.files)}. "
                     f"stdout={result.stdout[:100]}"

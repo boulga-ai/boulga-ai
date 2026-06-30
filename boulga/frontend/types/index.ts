@@ -220,6 +220,23 @@ export interface ConversationDetail extends Conversation {
 }
 
 // ============================================================
+// Agent Steps (outil agentique visible)
+// ============================================================
+
+export interface AgentStep {
+  /** Identifiant de l'appel outil (tool_call_id LiteLLM) */
+  id: string;
+  tool: string;
+  status: "running" | "done" | "error";
+  args?: Record<string, unknown>;
+  detail?: {
+    output?: string;
+    error?: string;
+    filename?: string;
+  };
+}
+
+// ============================================================
 // WhatsApp
 // ============================================================
 

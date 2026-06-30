@@ -7,12 +7,13 @@ import type { Components } from "react-markdown";
 import {
   IconFileText, IconFileTypePdf, IconFileSpreadsheet, IconDownload,
 } from "@tabler/icons-react";
-import type { Message } from "@/types";
+import type { Message, AgentStep } from "@/types";
 import { useDocStore } from "@/store/docStore";
 import { useAuthStore } from "@/store/authStore";
 import CodeBlock from "./CodeBlock";
 import Lightbox from "./Lightbox";
 import BubbleActions from "./BubbleActions";
+import AgentSteps from "./AgentSteps";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -67,16 +68,6 @@ function providerLabel(provider?: string, modelId?: string): string {
   const pName = provider ? (providerNames[provider] ?? provider) : "Assistant";
   const mLabel = modelId ? (modelLabels[modelId] ?? modelId) : "";
   return mLabel ? `${pName} · ${mLabel}` : pName;
-}
-
-function ThinkingIndicator() {
-  return (
-    <div className="flex items-center gap-1.5 py-1">
-      <span className="thinking-dot" />
-      <span className="thinking-dot" />
-      <span className="thinking-dot" />
-    </div>
-  );
 }
 
 // ── FileCard ─────────────────────────────────────────────────────────────────
@@ -156,6 +147,7 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
   streamingText?: string;
   attachments?: Array<{ id: string; name: string; size: number; mime_type: string }>;
+  agentSteps?: AgentStep[];
 }
 
 // ── Composant ─────────────────────────────────────────────────────────────────
@@ -165,6 +157,7 @@ export default function MessageBubble({
   isStreaming = false,
   streamingText = "",
   attachments = [],
+  agentSteps = [],
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
   const content = isStreaming ? streamingText : message.content;
@@ -337,7 +330,8 @@ export default function MessageBubble({
   }
 
   // ── Bulle ASSISTANT ────────────────────────────────────────────────────────
-  const isThinking = isStreaming && !streamingText;
+  const hasSteps = agentSteps.length > 0;
+  const isThinking = isStreaming && !content && !hasSteps;
 
   return (
     <>
@@ -360,7 +354,9 @@ export default function MessageBubble({
             style={{ borderRadius: "12px", border: "0.5px solid #E0E4EC" }}
           >
             {isThinking ? (
-              <ThinkingIndicator />
+              <p className="text-[13px] font-body italic" style={{ color: "#94A3B8" }}>
+                Je réfléchis à votre demande…
+              </p>
             ) : content ? (
               <div className={`prose-chat${isStreaming ? " streaming-cursor" : ""}`}>
                 <ReactMarkdown
@@ -370,9 +366,11 @@ export default function MessageBubble({
                   {content}
                 </ReactMarkdown>
               </div>
-            ) : (
+            ) : !hasSteps ? (
               <span className="text-neutral-text-tertiary text-[13px]">—</span>
-            )}
+            ) : null}
+
+            {hasSteps && <AgentSteps steps={agentSteps} />}
 
             {!isStreaming && <FileCard messageId={message.id} />}
           </div>
