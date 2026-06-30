@@ -10,25 +10,20 @@ import {
 import type { AgentStep } from "@/types";
 import CodeBlock from "./CodeBlock";
 
-// ── Labels naturels par outil et état ────────────────────────────────────────
+// ── Labels : description du LLM en priorité, fallback générique ──────────────
 
 function getLabel(step: AgentStep): string {
+  const llmDescription = step.args?.description as string | undefined;
+  if (llmDescription?.trim()) return llmDescription.trim();
+
+  // Fallback si le modèle n'a pas fourni de description
   const { tool, status } = step;
-
   if (tool === "read_skill") {
-    return status === "running"
-      ? "Je prépare votre fichier…"
-      : status === "done"
-        ? "Compris, je commence la génération"
-        : "Erreur lors de la préparation";
+    return status === "running" ? "Je prépare votre fichier…" : status === "done" ? "Préparation terminée" : "Erreur";
   }
-
   if (tool === "generate_file") {
-    if (status === "running") return "Création en cours…";
-    if (status === "done") return "Votre fichier est prêt";
-    return "Je corrige et réessaie…";
+    return status === "running" ? "Création en cours…" : status === "done" ? "Votre fichier est prêt" : "Je corrige et réessaie…";
   }
-
   return status === "running" ? "En cours…" : status === "done" ? "Terminé" : "Erreur";
 }
 

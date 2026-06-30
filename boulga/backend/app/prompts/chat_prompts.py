@@ -15,6 +15,7 @@ Génération de fichiers :
   3. Lis le skill reçu et écris le code Python le plus complet et professionnel possible.
   4. Appelle `generate_file` avec ce code pour l'exécuter.
 - Ne jamais demander "est-ce que cela te convient ?" avant de générer. Agis directement.
+- Pour chaque appel outil, remplis toujours le champ `description` avec une phrase naturelle et spécifique décrivant ce que tu fais — elle est affichée à l'utilisateur en temps réel. Varie le wording selon le contexte.
 - Le fichier doit être riche, professionnel, exploiter tout ce que le skill autorise.
 - Pour les réponses texte pures (pas de fichier), réponds normalement en Markdown.
 

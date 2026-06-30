@@ -17,7 +17,15 @@ FILE_GENERATION_TOOLS: list[dict] = [
                         "type": "string",
                         "enum": ["excel", "pdf", "docx", "csv", "pptx"],
                         "description": "Le type de fichier à générer.",
-                    }
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": (
+                            "Phrase naturelle décrivant ce que tu fais à cette étape "
+                            "(ex: 'Je lis le guide pour créer un rapport Word professionnel'). "
+                            "Visible par l'utilisateur."
+                        ),
+                    },
                 },
                 "required": ["file_type"],
             },
@@ -43,6 +51,14 @@ FILE_GENERATION_TOOLS: list[dict] = [
                     "filename": {
                         "type": "string",
                         "description": "Nom du fichier attendu avec extension (ex: rapport_ventes.xlsx).",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": (
+                            "Phrase naturelle décrivant ce que tu génères "
+                            "(ex: 'Je construis le rapport PFE avec styles, titres et bibliographie'). "
+                            "Visible par l'utilisateur."
+                        ),
                     },
                 },
                 "required": ["code", "filename"],
