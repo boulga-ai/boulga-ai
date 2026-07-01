@@ -45,9 +45,8 @@ Couleurs :
   Info #1565C0
   Ratio : 60% blanc/fond, 30% marine, 10% bleu
 Typographie :
-  Titres / H1 / display : DM Serif Display Regular 400 (Google Fonts)
-  Interface / corps : DM Sans 300/400/500 (Google Fonts)
-  Display 36px, H1 26px, H2 18px, Corps 15px, UI 13-14px, Caption 12px
+  Une seule famille : Inter 300/400/500/600/700 (Google Fonts, display:swap)
+  Display 36px semibold (−0.02em tracking), H1 26px semibold (−0.01em), H2 18px medium, Corps 15px regular, UI 13-14px regular, Caption 12px regular
 Espacements : multiples de 4px (4, 8, 12, 16, 24, 48)
 Rayons : inputs/badges 4px, boutons 8px, cards 12px, modales 16px, tags pill
 Bordure par défaut : 0.5px solid #E0E4EC

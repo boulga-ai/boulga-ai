@@ -1,19 +1,14 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
-import { DM_Sans, DM_Serif_Display } from "next/font/google";
+import { Inter } from "next/font/google";
 import { ToastContainer } from "@/components/ui/Toast";
 import "./globals.css";
 
-const dmSans = DM_Sans({
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-dm-sans",
-  weight: ["300", "400", "500", "700"],
-});
-
-const dmSerifDisplay = DM_Serif_Display({
-  subsets: ["latin"],
-  variable: "--font-dm-serif-display",
-  weight: ["400"],
+  variable: "--font-inter",
+  weight: ["300", "400", "500", "600", "700"],
+  display: "swap",
 });
 
 export const viewport: Viewport = {
@@ -40,7 +35,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr" className={`${dmSans.variable} ${dmSerifDisplay.variable}`}>
+    <html lang="fr" className={inter.variable}>
       <body className="font-body bg-neutral-bg text-neutral-text antialiased">
         {children}
         <ToastContainer />

@@ -10,8 +10,8 @@ const config: Config = {
     extend: {
       // Typography
       fontFamily: {
-        display: ["var(--font-dm-serif-display)"],
-        body: ["var(--font-dm-sans)"],
+        display: ["var(--font-inter)"],
+        body: ["var(--font-inter)"],
       },
       fontSize: {
         // Display
