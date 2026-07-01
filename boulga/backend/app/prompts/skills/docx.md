@@ -1,68 +1,147 @@
 # Skill : Génération de fichiers Word (.docx)
 
-## Bibliothèques disponibles
-- `python-docx` (`docx`) — création et mise en forme de .docx
+## Bibliothèque
+`python-docx` (`from docx import Document`)
 
 ## Règle absolue
+```python
+doc.save(path)
+print(f"FILE:{path}")   # toujours après save(), jamais avant
 ```
-print("FILE:/home/user/nom_fichier.docx")
-```
-Après `doc.save(path)`, jamais avant.
 
-## Exigences de qualité
+## Gotchas critiques — lire avant de coder
 
-**Structure du document**
-- Utiliser les styles natifs Word : `'Heading 1'`, `'Heading 2'`, `'Normal'`, `'List Bullet'`
-- Table des matières automatique si document > 3 sections (utiliser les styles Heading)
-- Marges standard : 2.54 cm (1 pouce) si non spécifié
+**Paragraphes et runs**
+- Texte mixte (gras + normal) dans un même paragraphe → `paragraph.add_run()` pour chaque fragment, `run.bold = True` sur le fragment concerné.
+- Jamais de `\n` dans un run — utiliser `doc.add_paragraph()` pour chaque ligne.
+- Alignement : `from docx.enum.text import WD_ALIGN_PARAGRAPH` → `p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY`.
+
+**Styles**
+- Styles natifs à utiliser : `'Heading 1'`, `'Heading 2'`, `'Heading 3'`, `'Normal'`, `'List Bullet'`, `'List Number'`.
+- Ne jamais inventer un style — si le style n'existe pas dans le document, python-docx lève une erreur silencieuse ou utilise le style par défaut.
 
 **Tableaux**
-- Style de tableau propre : en-têtes en gras, bordures visibles
-- Largeurs de colonnes explicites si le contenu l'exige
-- `table.style = 'Table Grid'` pour un rendu professionnel simple
+- Toujours définir `table.style = 'Table Grid'` — sans ça les bordures sont invisibles.
+- Largeurs de colonnes : `table.columns[i].width = Inches(x)` — sans ça les colonnes ont une largeur par défaut aléatoire.
+- Fusion de cellules : `table.cell(row1, col1).merge(table.cell(row2, col2))` — écrire le texte dans la cellule supérieure gauche seulement.
+- Fond de cellule : nécessite XML — utiliser ce snippet exact :
+```python
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+def set_cell_bg(cell, hex_color):
+    tc = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    shd = OxmlElement('w:shd')
+    shd.set(qn('w:val'), 'clear')
+    shd.set(qn('w:color'), 'auto')
+    shd.set(qn('w:fill'), hex_color)
+    tcPr.append(shd)
+```
 
-**Mise en forme**
-- Titres principaux : `Heading 1` (auto-formaté par Word)
-- Sous-titres : `Heading 2`
-- Corps : `Normal`
-- Ne pas abuser du gras/italique — réserver aux éléments vraiment importants
+**Table des matières (TOC)**
+- python-docx ne calcule pas de vraie TOC. Solution : utiliser les styles `Heading 1/2/3` pour tous les titres + ajouter ce champ XML qui se met à jour à l'ouverture dans Word :
+```python
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+def add_toc(doc):
+    paragraph = doc.add_paragraph()
+    run = paragraph.add_run()
+    fldChar = OxmlElement('w:fldChar')
+    fldChar.set(qn('w:fldCharType'), 'begin')
+    instrText = OxmlElement('w:instrText')
+    instrText.set(qn('xml:space'), 'preserve')
+    instrText.text = 'TOC \\o "1-3" \\h \\z \\u'
+    fldChar2 = OxmlElement('w:fldChar')
+    fldChar2.set(qn('w:fldCharType'), 'separate')
+    fldChar3 = OxmlElement('w:fldChar')
+    fldChar3.set(qn('w:fldCharType'), 'end')
+    run._r.append(fldChar)
+    run._r.append(instrText)
+    run._r.append(fldChar2)
+    run._r.append(fldChar3)
+```
 
-**Listes**
-- `'List Bullet'` pour les puces
-- `'List Number'` pour les listes numérotées
+**En-têtes et pieds de page**
+```python
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+section = doc.sections[0]
+footer = section.footer
+p = footer.paragraphs[0]
+p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+run = p.add_run()
+# Numéro de page automatique
+fldChar1 = OxmlElement('w:fldChar'); fldChar1.set(qn('w:fldCharType'), 'begin')
+instrText = OxmlElement('w:instrText'); instrText.text = 'PAGE'
+fldChar2 = OxmlElement('w:fldChar'); fldChar2.set(qn('w:fldCharType'), 'end')
+run._r.append(fldChar1); run._r.append(instrText); run._r.append(fldChar2)
+```
 
-## Interdictions
-- Ne pas manipuler directement le XML interne (risque de corruption)
-- Ne pas mélanger les formats de marges (utiliser `Inches` ou `Cm` de manière cohérente)
-- Ne pas créer de styles personnalisés complexes (compatibilité variable)
+**Polices sûres** (sans embedding) : Calibri, Arial, Times New Roman, Courier New.
+- `run.font.name = 'Arial'`
+- `run.font.size = Pt(11)`
 
-## Exemple de structure minimale
+**Marges**
+```python
+from docx.shared import Cm
+section = doc.sections[0]
+section.top_margin = Cm(2.54)
+section.bottom_margin = Cm(2.54)
+section.left_margin = Cm(2.54)
+section.right_margin = Cm(2.54)
+```
+
+**Saut de page** : `doc.add_page_break()` — pas de `\n\n\n`.
+
+**Espacement entre paragraphes**
+```python
+from docx.shared import Pt
+p.paragraph_format.space_before = Pt(6)
+p.paragraph_format.space_after = Pt(6)
+```
+
+## Exigences de qualité
+- Document > 3 sections → ajouter une TOC après le titre principal.
+- Tout document formel → pied de page avec numéro de page centré.
+- Titres hiérarchiques : `Heading 1` pour sections, `Heading 2` pour sous-sections.
+- Tableau de données → `Table Grid`, en-têtes en gras avec fond `0B1F3A` (marine) texte blanc.
+- Marges standard : 2.54 cm sauf demande contraire.
+- Nom de fichier : minuscules, tirets, sans espaces ni accents.
+
+## Exemple complet
 ```python
 from docx import Document
-from docx.shared import Pt, Cm
+from docx.shared import Pt, Cm, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 doc = Document()
 
-# Titre
-doc.add_heading("Titre Principal", level=1)
+# Marges
+section = doc.sections[0]
+for margin in ['top_margin','bottom_margin','left_margin','right_margin']:
+    setattr(section, margin, Cm(2.54))
 
-# Paragraphe
-p = doc.add_paragraph("Contenu du document.")
+# Titre
+doc.add_heading("Rapport Annuel 2026", level=1)
+
+# Paragraphe justifié
+p = doc.add_paragraph("Introduction du document.")
+p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
 # Tableau
 table = doc.add_table(rows=1, cols=3)
 table.style = 'Table Grid'
 hdr = table.rows[0].cells
-hdr[0].text = "Colonne A"
-hdr[1].text = "Colonne B"
-hdr[2].text = "Colonne C"
-row = table.add_row().cells
-row[0].text = "Valeur 1"
-row[1].text = "Valeur 2"
-row[2].text = "1 000 FCFA"
+for i, txt in enumerate(["Désignation", "Quantité", "Montant (FCFA)"]):
+    hdr[i].text = txt
+    hdr[i].paragraphs[0].runs[0].bold = True
 
-path = "/home/user/document.docx"
+row = table.add_row().cells
+row[0].text = "Produit A"
+row[1].text = "10"
+row[2].text = "150 000"
+
+path = "/home/user/rapport_2026.docx"
 doc.save(path)
 print(f"FILE:{path}")
 ```
