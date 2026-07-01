@@ -452,10 +452,10 @@ function WhatsAppSection({ isSourcePlus }: { isSourcePlus: boolean }) {
     }
     setLoading(true);
     try {
-      const token = useAuthStore.getState().getToken();
       const res = await fetch(`${API_URL}/api/whatsapp/link`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone_number: phone }),
       });
       const data = await res.json();
@@ -473,10 +473,10 @@ function WhatsAppSection({ isSourcePlus }: { isSourcePlus: boolean }) {
     setError(null);
     setLoading(true);
     try {
-      const token = useAuthStore.getState().getToken();
       const res = await fetch(`${API_URL}/api/whatsapp/verify`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code }),
       });
       const data = await res.json();
@@ -493,10 +493,9 @@ function WhatsAppSection({ isSourcePlus }: { isSourcePlus: boolean }) {
   async function handleUnlink() {
     setLoading(true);
     try {
-      const token = useAuthStore.getState().getToken();
       await fetch(`${API_URL}/api/whatsapp/unlink`, {
         method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: "include",
       });
       setLinkedPhone(null);
       setPhone("");

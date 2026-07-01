@@ -12,7 +12,6 @@ import {
   IconZoomIn, IconZoomOut, IconMaximize,
 } from "@tabler/icons-react";
 import { useDocStore, type Artifact } from "@/store/docStore";
-import { useAuthStore } from "@/store/authStore";
 import CodeBlock from "@/components/chat/CodeBlock";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -57,9 +56,7 @@ function ArtifactViewer({ artifact }: { artifact: Artifact }) {
 
   useEffect(() => {
     if (!isTxt) return;
-    const token = useAuthStore.getState().getToken();
-    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-    fetch(artifact.url, { headers })
+    fetch(artifact.url, { credentials: "include" })
       .then((r) => r.text())
       .then(setTxtContent)
       .catch(() => setTxtContent("Impossible de charger le contenu."));
@@ -232,9 +229,7 @@ export default function DocumentPanel() {
   const handleDownload = async () => {
     if (currentArtifact) {
       try {
-        const token = useAuthStore.getState().getToken();
-        const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-        const res = await fetch(currentArtifact.url, { headers });
+        const res = await fetch(currentArtifact.url, { credentials: "include" });
         if (!res.ok) throw new Error();
         const blob = await res.blob();
         downloadBlob(blob, currentArtifact.name);

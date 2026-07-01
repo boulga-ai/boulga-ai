@@ -47,7 +47,7 @@ function RegisterContent() {
       }
 
       const data = await res.json();
-      setUser(data.user, data.access_token);
+      setUser(data.user);
       router.push("/chat");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur lors de l'inscription");

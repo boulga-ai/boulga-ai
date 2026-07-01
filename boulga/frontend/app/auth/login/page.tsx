@@ -33,7 +33,7 @@ export default function LoginPage() {
       }
 
       const data = await res.json();
-      setUser(data.user, data.access_token);
+      setUser(data.user);
       router.push("/chat");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur lors de la connexion");

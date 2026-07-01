@@ -15,46 +15,30 @@ export type { ReferralStats, ReferralHistoryItem };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function bearerHeader(): Record<string, string> {
-  const { useAuthStore } = require("@/store/authStore");
-  const token: string | null = useAuthStore.getState().getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-function jsonHeaders(): HeadersInit {
-  return { "Content-Type": "application/json", ...bearerHeader() };
-}
-
-async function tryRefresh(): Promise<string | null> {
+async function tryRefresh(): Promise<boolean> {
   try {
     const res = await fetch(`${API_URL}/api/auth/refresh`, {
       method: "POST",
       credentials: "include",
     });
-    if (!res.ok) return null;
+    if (!res.ok) return false;
     const data = await res.json();
     const { useAuthStore } = require("@/store/authStore");
-    useAuthStore.getState().setUser(data.user, data.access_token);
-    return data.access_token as string;
+    useAuthStore.getState().setUser(data.user);
+    return true;
   } catch {
-    return null;
+    return false;
   }
 }
 
 async function authFetch(input: string, init?: RequestInit): Promise<Response> {
-  const opts: RequestInit = {
-    ...init,
-    headers: { ...init?.headers, ...bearerHeader() },
-  };
+  const opts: RequestInit = { ...init, credentials: "include" };
   let res = await fetch(input, opts);
 
   if (res.status === 401) {
-    const newToken = await tryRefresh();
-    if (newToken) {
-      res = await fetch(input, {
-        ...init,
-        headers: { ...init?.headers, Authorization: `Bearer ${newToken}` },
-      });
+    const ok = await tryRefresh();
+    if (ok) {
+      res = await fetch(input, opts);
     } else {
       const { useAuthStore } = require("@/store/authStore");
       await useAuthStore.getState().logout();

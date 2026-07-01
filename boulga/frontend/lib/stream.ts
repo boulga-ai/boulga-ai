@@ -2,23 +2,18 @@
 import { API_URL } from "@/lib/constants";
 import { useAuthStore } from "@/store/authStore";
 
-function authHeader(): Record<string, string> {
-  const token = useAuthStore.getState().getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-async function tryRefresh(): Promise<string | null> {
+async function tryRefresh(): Promise<boolean> {
   try {
     const res = await fetch(`${API_URL}/api/auth/refresh`, {
       method: "POST",
       credentials: "include",
     });
-    if (!res.ok) return null;
+    if (!res.ok) return false;
     const data = await res.json();
-    useAuthStore.getState().setUser(data.user, data.access_token);
-    return data.access_token as string;
+    useAuthStore.getState().setUser(data.user);
+    return true;
   } catch {
-    return null;
+    return false;
   }
 }
 
@@ -80,35 +75,31 @@ export function streamChat(
   const controller = new AbortController();
 
   (async () => {
+    const chatOpts: RequestInit = {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      credentials: "include",
+      signal: controller.signal,
+    };
+
     let res: Response;
     try {
-      res = await fetch(`${API_URL}/api/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeader() },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
+      res = await fetch(`${API_URL}/api/chat`, chatOpts);
     } catch (err: unknown) {
       if ((err as { name?: string }).name === "AbortError") return;
       handlers.onError("Impossible de joindre le serveur.");
       return;
     }
 
-    // Token d'accès expiré : un seul essai de refresh silencieux avant d'abandonner,
-    // comme le fait déjà authFetch() pour les autres routes (api.ts).
     if (res.status === 401) {
-      const newToken = await tryRefresh();
-      if (!newToken) {
+      const ok = await tryRefresh();
+      if (!ok) {
         handlers.onError("Session expirée. Veuillez vous reconnecter.");
         return;
       }
       try {
-        res = await fetch(`${API_URL}/api/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${newToken}` },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        });
+        res = await fetch(`${API_URL}/api/chat`, chatOpts);
       } catch (err: unknown) {
         if ((err as { name?: string }).name === "AbortError") return;
         handlers.onError("Impossible de joindre le serveur.");
@@ -281,8 +272,9 @@ export function streamCompare(
     try {
       res = await fetch(`${API_URL}/api/compare`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeader() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        credentials: "include",
         signal: controller.signal,
       });
     } catch (err: unknown) {

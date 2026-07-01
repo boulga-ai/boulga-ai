@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import { streamCompare } from "@/lib/stream";
 import { API_URL } from "@/lib/constants";
-import { useAuthStore } from "@/store/authStore";
 import type { ComparisonSession } from "@/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -138,9 +137,8 @@ export const useCompareStore = create<CompareState & CompareActions>((set, get) 
 
   loadHistory: async () => {
     try {
-      const token = useAuthStore.getState().getToken();
       const res = await fetch(`${API_URL}/api/compare/history`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: "include",
       });
       if (!res.ok) return;
       const sessions = await res.json();

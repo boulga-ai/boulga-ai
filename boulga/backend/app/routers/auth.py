@@ -61,17 +61,40 @@ class ResetPasswordRequest(BaseModel):
 
 # ── Cookie helpers ────────────────────────────────────────────────────────────
 
-def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
-    cookie_kwargs = {
+def _cookie_base(path: str, max_age: int) -> dict:
+    kwargs: dict = {
         "httponly": True,
         "secure": settings.is_production,
         "samesite": settings.COOKIE_SAMESITE,
-        "path": "/api/auth/refresh",
-        "max_age": settings.JWT_REFRESH_EXPIRE_DAYS * 86400,
+        "path": path,
+        "max_age": max_age,
     }
     if settings.COOKIE_DOMAIN:
-        cookie_kwargs["domain"] = settings.COOKIE_DOMAIN
-    response.set_cookie(key=REFRESH_COOKIE, value=refresh_token, **cookie_kwargs)
+        kwargs["domain"] = settings.COOKIE_DOMAIN
+    return kwargs
+
+
+def _set_access_cookie(response: Response, access_token: str) -> None:
+    response.set_cookie(
+        key=ACCESS_COOKIE,
+        value=access_token,
+        **_cookie_base(path="/", max_age=settings.JWT_EXPIRE_MINUTES * 60),
+    )
+
+
+def _clear_access_cookie(response: Response) -> None:
+    kwargs = {"path": "/", "httponly": True}
+    if settings.COOKIE_DOMAIN:
+        kwargs["domain"] = settings.COOKIE_DOMAIN
+    response.delete_cookie(key=ACCESS_COOKIE, **kwargs)
+
+
+def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
+    response.set_cookie(
+        key=REFRESH_COOKIE,
+        value=refresh_token,
+        **_cookie_base(path="/api/auth/refresh", max_age=settings.JWT_REFRESH_EXPIRE_DAYS * 86400),
+    )
 
 
 def _clear_refresh_cookie(response: Response) -> None:
@@ -114,13 +137,10 @@ async def register(req: RegisterRequest, response: Response):
     jwt_payload = {"sub": user["id"], "email": user["email"], "is_admin": bool(user.get("is_admin", False))}
     access_token = create_jwt(jwt_payload)
     refresh_token = create_refresh_token(jwt_payload)
+    _set_access_cookie(response, access_token)
     _set_refresh_cookie(response, refresh_token)
 
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": _safe_user(user),
-    }
+    return {"user": _safe_user(user)}
 
 
 @router.post("/login")
@@ -138,13 +158,10 @@ async def login(req: LoginRequest, response: Response):
     jwt_payload = {"sub": user["id"], "email": user["email"], "is_admin": bool(user.get("is_admin", False))}
     access_token = create_jwt(jwt_payload)
     refresh_token = create_refresh_token(jwt_payload)
+    _set_access_cookie(response, access_token)
     _set_refresh_cookie(response, refresh_token)
 
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": _safe_user(user),
-    }
+    return {"user": _safe_user(user)}
 
 
 @router.get("/me")
@@ -162,6 +179,7 @@ async def me(user: dict = Depends(get_current_user)):
 
 @router.post("/logout")
 async def logout(response: Response):
+    _clear_access_cookie(response)
     _clear_refresh_cookie(response)
     return {"message": "Déconnecté avec succès"}
 
@@ -196,13 +214,10 @@ async def refresh(request: Request, response: Response):
     jwt_payload = {"sub": user["id"], "email": user["email"], "is_admin": bool(user.get("is_admin", False))}
     new_access = create_jwt(jwt_payload)
     new_refresh = create_refresh_token(jwt_payload)
+    _set_access_cookie(response, new_access)
     _set_refresh_cookie(response, new_refresh)
 
-    return {
-        "access_token": new_access,
-        "token_type": "bearer",
-        "user": _safe_user(user),
-    }
+    return {"user": _safe_user(user)}
 
 
 @router.post("/forgot-password")
