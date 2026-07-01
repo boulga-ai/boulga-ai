@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
@@ -331,23 +331,7 @@ export default function MessageBubble({
 
   // ── Bulle ASSISTANT ────────────────────────────────────────────────────────
   const hasSteps = agentSteps.length > 0;
-  const isThinking = isStreaming && !content && !hasSteps;
-
-  // Affiche l'indicateur de réflexion uniquement après 800ms d'attente
-  // Les réponses rapides (bonjour, etc.) ne le verront jamais
-  const [showThinking, setShowThinking] = useState(false);
-  const thinkingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (isThinking) {
-      thinkingTimer.current = setTimeout(() => setShowThinking(true), 800);
-    } else {
-      if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
-      setShowThinking(false);
-    }
-    return () => {
-      if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
-    };
-  }, [isThinking]);
+  const isWaiting = isStreaming && !content && !hasSteps;
 
   return (
     <>
@@ -369,10 +353,12 @@ export default function MessageBubble({
             className="bg-neutral-white px-4 py-3 text-[15px] text-marine"
             style={{ borderRadius: "12px", border: "0.5px solid #E0E4EC" }}
           >
-            {showThinking ? (
-              <p className="text-[13px] font-body italic" style={{ color: "#94A3B8" }}>
-                Je réfléchis à votre demande…
-              </p>
+            {isWaiting ? (
+              <span className="flex gap-1 py-1">
+                <span className="thinking-dot" />
+                <span className="thinking-dot" />
+                <span className="thinking-dot" />
+              </span>
             ) : content ? (
               <div className={`prose-chat${isStreaming ? " streaming-cursor" : ""}`}>
                 <ReactMarkdown
@@ -382,9 +368,7 @@ export default function MessageBubble({
                   {content}
                 </ReactMarkdown>
               </div>
-            ) : !hasSteps ? (
-              <span className="text-neutral-text-tertiary text-[13px]">—</span>
-            ) : null}
+            ) : !hasSteps ? null : null}
 
             {hasSteps && <AgentSteps steps={agentSteps} />}
 
