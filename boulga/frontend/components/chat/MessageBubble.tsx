@@ -349,10 +349,7 @@ export default function MessageBubble({
             {providerLabel(message.provider, message.model_id)}
           </div>
 
-          <div
-            className="bg-neutral-white px-4 py-3 text-[15px] text-marine"
-            style={{ borderRadius: "12px", border: "0.5px solid #E0E4EC" }}
-          >
+          <div className="text-[15px] text-marine">
             {isWaiting ? (
               <span className="flex gap-1 py-1">
                 <span className="thinking-dot" />
@@ -360,7 +357,7 @@ export default function MessageBubble({
                 <span className="thinking-dot" />
               </span>
             ) : content ? (
-              <div className={`prose-chat${isStreaming ? " streaming-cursor" : ""}`}>
+              <div className="prose-chat">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={markdownComponents}
