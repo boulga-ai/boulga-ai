@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 from app.core.stream_errors import StreamErrorCode, stream_error
 from app.db.repositories.conversation_repository import ConversationRepository
+from app.db.repositories.file_repository import FileRepository
 from app.db.repositories.message_repository import MessageRepository
 from app.db.session import get_supabase
 from app.manager.llm_manager import llm_manager
@@ -53,6 +54,7 @@ class ChatService:
         db = get_supabase()
         self._conv_repo = ConversationRepository(db)
         self._msg_repo  = MessageRepository(db)
+        self._file_repo = FileRepository(db)
         self._quota_svc = QuotaService()
         self._sub_svc   = SubscriptionService()
 
@@ -371,10 +373,18 @@ class ChatService:
         # i-bis. Patch message_id sur les file_ready E2B déjà émis
         if _generated_files:
             for _f in _generated_files:
+                fid = _f.get("file_id")
+                mid = assistant_msg["id"]
+                # Écriture durable en DB
+                try:
+                    await asyncio.to_thread(self._file_repo.update_message_id, fid, mid)
+                except Exception:
+                    pass
+                # Patch frontend SSE
                 yield {
                     "type":       "file_message_id",
-                    "file_id":    _f.get("file_id"),
-                    "message_id": assistant_msg["id"],
+                    "file_id":    fid,
+                    "message_id": mid,
                 }
 
         # i. Génération de document (basée sur le contenu Markdown)

@@ -58,6 +58,9 @@ class FileRepository:
         )
         return result.data or []
 
+    def update_message_id(self, file_id: str, message_id: str) -> None:
+        self.db.table(TABLE).update({"message_id": message_id}).eq("id", file_id).execute()
+
     def delete(self, file_id: UUID) -> bool:
         self.db.table(TABLE).delete().eq("id", str(file_id)).execute()
         return True

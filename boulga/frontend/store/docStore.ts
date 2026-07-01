@@ -42,6 +42,8 @@ interface DocStoreActions {
   goToVersion: (index: number) => void;
   /** Ajoute un artifact et l'ouvre dans le panel */
   addArtifact: (artifact: Artifact) => void;
+  /** Patch le messageId d'un artifact existant (après réception de file_message_id) */
+  updateArtifactMessageId: (fileId: string, messageId: string) => void;
   /** Navigue vers un artifact par index */
   goToArtifact: (index: number) => void;
   /** Ferme le panel */
@@ -118,6 +120,14 @@ export const useDocStore = create<DocStoreState & DocStoreActions>((set, get) =>
       currentDocument: null,
       panelOpen: true,
     });
+  },
+
+  updateArtifactMessageId: (fileId: string, messageId: string) => {
+    set((s) => ({
+      artifacts: s.artifacts.map((a) =>
+        a.id === fileId ? { ...a, messageId } : a,
+      ),
+    }));
   },
 
   goToArtifact: (index: number) => {

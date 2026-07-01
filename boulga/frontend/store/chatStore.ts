@@ -286,15 +286,23 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
         },
 
         onFileReady: (info) => {
+          const rawUrl = info.url ?? "";
+          const url = rawUrl.startsWith("/api/")
+            ? `${API_URL}${rawUrl}`
+            : rawUrl || `${API_URL}/api/files/${info.file_id}/download`;
           useDocStore.getState().addArtifact({
             id: info.file_id,
             messageId: info.message_id ?? undefined,
             name: info.filename,
-            url: info.url.startsWith("/api/") ? `${API_URL}${info.url}` : info.url,
+            url,
             mimeType: info.mime_type,
             size: info.size,
             createdAt: Date.now(),
           });
+        },
+
+        onFileMessageId: (info) => {
+          useDocStore.getState().updateArtifactMessageId(info.file_id, info.message_id);
         },
 
         onToolStart: (id, tool, args) => {
@@ -451,11 +459,15 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
         },
         onTitle: () => { },
         onFileReady: (info) => {
+          const rawUrl = info.url ?? "";
+          const url = rawUrl.startsWith("/api/")
+            ? `${API_URL}${rawUrl}`
+            : rawUrl || `${API_URL}/api/files/${info.file_id}/download`;
           useDocStore.getState().addArtifact({
             id: info.file_id,
             messageId: info.message_id ?? undefined,
             name: info.filename,
-            url: info.url.startsWith("/api/") ? `${API_URL}${info.url}` : info.url,
+            url,
             mimeType: info.mime_type,
             size: info.size,
             createdAt: Date.now(),
