@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { IconCopy, IconCheck, IconRefresh, IconSend, IconX } from "@tabler/icons-react";
+import { IconCopy, IconCheck, IconRefresh, IconSend, IconX, IconThumbUp, IconThumbDown } from "@tabler/icons-react";
 import { useChatStore } from "@/store/chatStore";
 import { postFeedback } from "@/lib/api";
 import type { Message } from "@/types";
@@ -68,21 +68,22 @@ export default function BubbleActions({ message }: Props) {
   }
 
   const btnBase =
-    "flex items-center gap-1 px-1.5 py-1 rounded text-[11px] font-body transition-colors duration-100";
+    "p-1.5 rounded-md transition-colors duration-100";
   const btnInactive =
     "text-neutral-text-tertiary hover:text-neutral-text-secondary hover:bg-neutral-bg";
 
   return (
     <div className="mt-2">
-      {/* Barre d'actions — toujours visible sur mobile, visible au survol sur desktop */}
-      <div className="flex items-center gap-0.5 justify-end">
+      {/* Barre d'actions — visible au survol sur desktop, toujours visible sur mobile */}
+      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 md:transition-opacity md:duration-150 opacity-100 md:opacity-0 md:group-hover:opacity-100">
         {/* Copier */}
         <button
           onClick={handleCopy}
           className={`${btnBase} ${copied ? "text-success" : btnInactive}`}
           title="Copier la réponse"
+          aria-label="Copier la réponse"
         >
-          {copied ? <><IconCheck size={13} /> Copié</> : <IconCopy size={13} />}
+          {copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
         </button>
 
         {/* Régénérer */}
@@ -91,14 +92,15 @@ export default function BubbleActions({ message }: Props) {
           disabled={isStreaming}
           className={`${btnBase} ${btnInactive} disabled:opacity-40 disabled:cursor-not-allowed`}
           title="Régénérer la réponse"
+          aria-label="Régénérer la réponse"
         >
-          <IconRefresh size={13} />
+          <IconRefresh size={16} />
         </button>
 
         {/* Séparateur */}
-        <span className="w-px h-3 bg-neutral-border mx-1" />
+        <span className="w-px h-3.5 bg-neutral-border mx-1" />
 
-        {/* 👍 */}
+        {/* Thumbs up */}
         <button
           onClick={handleThumbUp}
           disabled={!!rating}
@@ -108,20 +110,20 @@ export default function BubbleActions({ message }: Props) {
           title="Bonne réponse"
           aria-label="Bonne réponse"
         >
-          👍
+          <IconThumbUp size={16} />
         </button>
 
-        {/* 👎 */}
+        {/* Thumbs down */}
         <button
           onClick={handleThumbDown}
           disabled={!!rating}
           className={`${btnBase} ${
-            rating === "down" ? "text-error" : btnInactive
+            rating === "down" ? "text-error bg-red-50" : btnInactive
           } disabled:cursor-default`}
           title="Mauvaise réponse"
           aria-label="Mauvaise réponse"
         >
-          👎
+          <IconThumbDown size={16} />
         </button>
       </div>
 

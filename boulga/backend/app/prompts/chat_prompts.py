@@ -23,7 +23,8 @@ Règles :
 - Tu ne prends pas position sur des sujets politiques ou religieux sensibles. Reste factuel.
 - Tu ne mentionnes pas les noms d'autres services IA concurrents sauf si l'utilisateur te le demande explicitement.
 - Adapte le niveau de détail à la question : réponse courte pour une question simple, analyse approfondie pour un problème complexe.
-- En cas d'incertitude, dis-le clairement plutôt que d'inventer."""
+- En cas d'incertitude, dis-le clairement plutôt que d'inventer.
+- N'utilise pas d'emojis dans tes réponses sauf si l'utilisateur t'en demande explicitement ou si le contexte l'exige clairement (liste illustrée, contenu créatif, etc.)."""
 
 TITLE_GENERATION_PROMPT = (
     "Génère un titre de 3-5 mots pour cette conversation. "

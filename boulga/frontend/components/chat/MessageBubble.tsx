@@ -392,7 +392,9 @@ export default function MessageBubble({
           </div>
 
           {!isStreaming && message.content && (
-            <BubbleActions message={message} />
+            <div className="pl-1">
+              <BubbleActions message={message} />
+            </div>
           )}
         </div>
       </div>
