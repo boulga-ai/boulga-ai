@@ -18,6 +18,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from app.config import settings
 from app.core.security import (
+    ACCESS_COOKIE,
     REFRESH_COOKIE,
     create_jwt,
     create_refresh_token,
