@@ -35,7 +35,7 @@ function downloadBlob(blob: Blob, filename: string) {
 
 async function downloadFile(url: string, filename: string) {
   try {
-    const res = await fetch(url, { credentials: "include" });
+    const res = await fetch(url);
     if (!res.ok) throw new Error();
     const blob = await res.blob();
     downloadBlob(blob, filename);

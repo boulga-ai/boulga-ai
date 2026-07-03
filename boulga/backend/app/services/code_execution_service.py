@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import logging
 from dataclasses import dataclass, field
@@ -45,6 +46,19 @@ class CodeExecutionService:
         if not settings.E2B_API_KEY:
             return CodeResult(error="E2B_API_KEY manquante dans .env")
 
+        return await asyncio.to_thread(
+            self._execute_sync, Sandbox, code, user_id, conversation_id, message_id, timeout
+        )
+
+    def _execute_sync(
+        self,
+        Sandbox,
+        code: str,
+        user_id: str,
+        conversation_id: str | None,
+        message_id: str | None,
+        timeout: int,
+    ) -> CodeResult:
         sbx = None
         try:
             sbx = Sandbox.create(timeout=timeout, api_key=settings.E2B_API_KEY)

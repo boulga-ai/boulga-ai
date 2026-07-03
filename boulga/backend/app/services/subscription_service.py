@@ -106,8 +106,9 @@ class SubscriptionService:
 
     # ── Checks d'accès ────────────────────────────────────────────────
 
-    def check_can_use_model(self, user_id: str, provider: str, model_id: str) -> bool:
-        tier = self.get_tier(user_id)
+    def check_can_use_model(self, user_id: str, provider: str, model_id: str, tier: str | None = None) -> bool:
+        if tier is None:
+            tier = self.get_tier(user_id)
         if not is_provider_active(provider):
             return False
         allowed = get_models_for_tier(tier)

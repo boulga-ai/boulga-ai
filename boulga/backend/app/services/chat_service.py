@@ -166,17 +166,18 @@ class ChatService:
 
         yield {"type": "conversation", "id": conversation_id, "is_new": is_new}
 
-        # b. Quotas
-        if not await self._quota_svc.is_message_allowed(user_id):
+        # b. Tier unique — une seule requête SQL pour tous les checks
+        tier = await asyncio.to_thread(self._sub_svc.get_tier, user_id)
+
+        if not await self._quota_svc.is_message_allowed(user_id, tier=tier):
             yield stream_error(StreamErrorCode.QUOTA_EXCEEDED)
             return
 
-        if not self._sub_svc.check_can_use_model(user_id, provider, model_id):
+        if not self._sub_svc.check_can_use_model(user_id, provider, model_id, tier=tier):
             yield stream_error(StreamErrorCode.MODEL_ACCESS_DENIED)
             return
 
         # c. Routage Automatique
-        tier = self._sub_svc.get_tier(user_id)
         if auto_route and tier in _ROUTING_TIERS:
             try:
                 route = await router_agent.route(message, tier)
@@ -199,7 +200,7 @@ class ChatService:
         })
 
         # e. Préparer contexte
-        history         = await asyncio.to_thread(self._msg_repo.list_by_conversation, UUID(conversation_id))
+        history         = await asyncio.to_thread(self._msg_repo.list_recent_by_conversation, UUID(conversation_id))
         text_context, binary_files = await asyncio.to_thread(self._prepare_files, file_ids, provider)
         system_prompt   = get_full_system_prompt(tool_slug)
         history_for_llm = await self._prepare_history(history, model_id)

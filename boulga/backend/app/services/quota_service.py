@@ -206,8 +206,9 @@ class QuotaService:
 
     # ── Lecture du quota restant ──────────────────────────────────────
 
-    async def get_remaining(self, user_id: str) -> dict:
-        tier   = self._get_tier(user_id)
+    async def get_remaining(self, user_id: str, tier: str | None = None) -> dict:
+        if tier is None:
+            tier = self._get_tier(user_id)
         period = _period_key(tier)
         limits = TIER_LIMITS.get(tier, TIER_LIMITS["free"])
 
@@ -238,21 +239,22 @@ class QuotaService:
 
     # ── Vérifications ─────────────────────────────────────────────────
 
-    async def is_message_allowed(self, user_id: str) -> bool:
-        tier = self._get_tier(user_id)
+    async def is_message_allowed(self, user_id: str, tier: str | None = None) -> bool:
+        if tier is None:
+            tier = self._get_tier(user_id)
         if tier == "ocean":
-            # Seul le cap de tokens bloque l'Océan
             period   = _period_key(tier)
             tok_used = await self._rget(self._mk_tok(user_id, period))
             return tok_used < OCEAN_TOKEN_CAP
-        remaining = await self.get_remaining(user_id)
+        remaining = await self.get_remaining(user_id, tier=tier)
         return remaining["messages_remaining"] > 0
 
-    async def is_file_allowed(self, user_id: str) -> bool:
-        tier = self._get_tier(user_id)
+    async def is_file_allowed(self, user_id: str, tier: str | None = None) -> bool:
+        if tier is None:
+            tier = self._get_tier(user_id)
         if tier == "ocean":
             return True
-        remaining = await self.get_remaining(user_id)
+        remaining = await self.get_remaining(user_id, tier=tier)
         return remaining["files_remaining"] > 0
 
     async def consume_image(self, user_id: str) -> None:

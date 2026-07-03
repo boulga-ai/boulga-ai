@@ -35,7 +35,21 @@ class MessageRepository:
             .range(offset, offset + limit - 1)
             .execute()
         )
-        return result.data if result is not None else None
+        return result.data if result is not None else []
+
+    def list_recent_by_conversation(
+        self, conversation_id: UUID, limit: int = 50
+    ) -> list[dict]:
+        result = (
+            self.db.table(TABLE)
+            .select("*")
+            .eq("conversation_id", str(conversation_id))
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        data = result.data if result is not None else []
+        return list(reversed(data))
 
     def count_by_conversation(self, conversation_id: UUID) -> int:
         result = (
