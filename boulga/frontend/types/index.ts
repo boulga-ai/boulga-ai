@@ -85,6 +85,14 @@ export interface Conversation {
   updated_at: string;
 }
 
+export interface InlineImage {
+  id: string;
+  url: string;
+  name: string;
+  mimeType: string;
+  size: number;
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -94,6 +102,7 @@ export interface Message {
   model_id?: string;
   file_ids: string[];
   created_at: string;
+  inlineImages?: InlineImage[];
 }
 
 // ============================================================

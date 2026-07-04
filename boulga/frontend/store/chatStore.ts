@@ -12,7 +12,7 @@ import { API_URL } from "@/lib/constants";
 import { useDocStore } from "@/store/docStore";
 import { useSubscriptionStore } from "@/store/subscriptionStore";
 import { useToastStore } from "@/store/toastStore";
-import type { Conversation, Message, LLM, EffortLevel, AgentStep } from "@/types";
+import type { Conversation, Message, LLM, EffortLevel, AgentStep, InlineImage } from "@/types";
 
 const LONG_RESPONSE_WORDS = 500;
 
@@ -166,23 +166,41 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
 
       // Restaurer les fichiers générés depuis l'API
       const docState = useDocStore.getState();
+      const imagesByMsg = new Map<string, InlineImage[]>();
+
       for (const f of detail.generated_files ?? []) {
-        if (!docState.artifacts.some((a) => a.id === f.id)) {
-          docState.addArtifact({
-            id: f.id,
-            messageId: f.message_id ?? undefined,
-            name: f.original_name,
-            url: `${API_URL}/api/files/${f.id}/download`,
-            mimeType: f.mime_type,
-            size: f.size_bytes,
-            createdAt: Date.now(),
-          });
+        const url = `${API_URL}/api/files/${f.id}/download`;
+        if (f.mime_type?.startsWith("image/")) {
+          // Images → inline dans la bulle
+          if (f.message_id) {
+            const arr = imagesByMsg.get(f.message_id) ?? [];
+            arr.push({ id: f.id, url, name: f.original_name, mimeType: f.mime_type, size: f.size_bytes });
+            imagesByMsg.set(f.message_id, arr);
+          }
+        } else {
+          // Autres fichiers → panel droit
+          if (!docState.artifacts.some((a) => a.id === f.id)) {
+            docState.addArtifact({
+              id: f.id,
+              messageId: f.message_id ?? undefined,
+              name: f.original_name,
+              url,
+              mimeType: f.mime_type,
+              size: f.size_bytes,
+              createdAt: Date.now(),
+            });
+          }
         }
       }
 
+      const msgsWithImages = msgs.map((m) => {
+        const imgs = imagesByMsg.get(m.id);
+        return imgs && imgs.length > 0 ? { ...m, inlineImages: imgs } : m;
+      });
+
       set({
         currentConversationId: id,
-        messages: msgs,
+        messages: msgsWithImages,
         selectedProvider: lastProvider,
         selectedModel: lastModel,
       });
@@ -290,15 +308,34 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
           const url = rawUrl.startsWith("/api/")
             ? `${API_URL}${rawUrl}`
             : rawUrl || `${API_URL}/api/files/${info.file_id}/download`;
-          useDocStore.getState().addArtifact({
-            id: info.file_id,
-            messageId: info.message_id ?? undefined,
-            name: info.filename,
-            url,
-            mimeType: info.mime_type,
-            size: info.size,
-            createdAt: Date.now(),
-          });
+
+          if (info.mime_type.startsWith("image/")) {
+            // Image générée → inline dans la bulle du message courant
+            set((s) => ({
+              messages: s.messages.map((m) =>
+                m.id === optimisticAssistantId
+                  ? {
+                      ...m,
+                      inlineImages: [
+                        ...(m.inlineImages ?? []),
+                        { id: info.file_id, url, name: info.filename, mimeType: info.mime_type, size: info.size },
+                      ],
+                    }
+                  : m,
+              ),
+            }));
+          } else {
+            // Autres fichiers → panel droit
+            useDocStore.getState().addArtifact({
+              id: info.file_id,
+              messageId: info.message_id ?? undefined,
+              name: info.filename,
+              url,
+              mimeType: info.mime_type,
+              size: info.size,
+              createdAt: Date.now(),
+            });
+          }
         },
 
         onFileMessageId: (info) => {
@@ -463,15 +500,32 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
           const url = rawUrl.startsWith("/api/")
             ? `${API_URL}${rawUrl}`
             : rawUrl || `${API_URL}/api/files/${info.file_id}/download`;
-          useDocStore.getState().addArtifact({
-            id: info.file_id,
-            messageId: info.message_id ?? undefined,
-            name: info.filename,
-            url,
-            mimeType: info.mime_type,
-            size: info.size,
-            createdAt: Date.now(),
-          });
+
+          if (info.mime_type.startsWith("image/")) {
+            set((s) => ({
+              messages: s.messages.map((m) =>
+                m.id === regenId
+                  ? {
+                      ...m,
+                      inlineImages: [
+                        ...(m.inlineImages ?? []),
+                        { id: info.file_id, url, name: info.filename, mimeType: info.mime_type, size: info.size },
+                      ],
+                    }
+                  : m,
+              ),
+            }));
+          } else {
+            useDocStore.getState().addArtifact({
+              id: info.file_id,
+              messageId: info.message_id ?? undefined,
+              name: info.filename,
+              url,
+              mimeType: info.mime_type,
+              size: info.size,
+              createdAt: Date.now(),
+            });
+          }
         },
         onDone: (messageId) => {
           const finalText = get().streamingText;

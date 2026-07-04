@@ -366,6 +366,35 @@ export default function MessageBubble({
 
             {hasSteps && <AgentSteps steps={agentSteps} />}
 
+            {/* Images générées — affichées inline comme ChatGPT */}
+            {message.inlineImages && message.inlineImages.length > 0 && (
+              <div className="mt-3 space-y-3">
+                {message.inlineImages.map((img) => (
+                  <div key={img.id}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={img.url}
+                      alt={img.name}
+                      className="max-w-full rounded-xl cursor-zoom-in hover:opacity-95 transition-opacity duration-100"
+                      style={{ maxHeight: "480px", objectFit: "contain" }}
+                      onClick={() => setLightboxSrc(img.url)}
+                    />
+                    <div className="mt-1.5 flex items-center justify-between">
+                      <span className="text-[11px] text-neutral-text-tertiary truncate max-w-[70%]">{img.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => downloadFile(img.url, img.name)}
+                        className="flex items-center gap-1 text-[11px] text-neutral-text-tertiary hover:text-marine transition-colors"
+                      >
+                        <IconDownload size={12} />
+                        Télécharger
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {!isStreaming && <FileCard messageId={message.id} />}
           </div>
 
