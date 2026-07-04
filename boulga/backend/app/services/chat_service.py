@@ -26,24 +26,9 @@ from app.utils.file_tools import get_tools_for_provider, IMAGE_GENERATION_TOOL
 
 _ROUTING_TIERS: set[str] = {"source", "fleuve", "ocean"}
 
-# Détection d'intention image — déclenche tool_choice="required" + outil unique
-_IMAGE_INTENT_RE = _re_svc.compile(
-    r"(?:génère?r?|créer?|crée?|fais|dessine?r?|produis|montre?[- ]moi|donne?[- ]moi|"
-    r"generate|create|draw|make|show\s+me|give\s+me)"
-    r".{0,30}?"
-    r"(?:image|photo|illustration|logo|visuel|affiche|poster|dessin|portrait|picture|graphic)"
-    r"|"
-    r"(?:image|photo|illustration|photo|picture)\s+(?:de|d['']\w|du|des|of|a\s|an\s)",
-    _re_svc.IGNORECASE,
-)
-
-def _is_image_intent(text: str) -> bool:
-    return bool(_IMAGE_INTENT_RE.search(text))
-
-
 _IMAGE_MODELS: dict[str, str] = {
-    "openai": "openai/gpt-image-1",
-    "gemini": "google/gemini-2.5-flash-image",
+    "openai": "openai/gpt-5-image",
+    "gemini": "google/gemini-2.5-flash-image-preview",
 }
 
 MODEL_CONTEXT_WINDOWS: dict[str, int] = {
@@ -370,10 +355,7 @@ class ChatService:
 
             return f"Outil inconnu : {name}", []
 
-        # Si intention image détectée : forcer l'outil — le modèle ne peut pas refuser
-        _force_image = provider in _IMAGE_MODELS and _is_image_intent(message)
-        _chat_tools = [IMAGE_GENERATION_TOOL] if _force_image else get_tools_for_provider(provider)
-        _tool_choice = "required" if _force_image else "auto"
+        _chat_tools = get_tools_for_provider(provider)
 
         try:
             async for event in llm_manager.stream_chat_with_tools(
@@ -384,7 +366,7 @@ class ChatService:
                 tools=_chat_tools,
                 tool_executor=_tool_executor,
                 effort=effort,
-                tool_choice=_tool_choice,
+                tool_choice="auto",
             ):
                 if event["type"] == "text":
                     if _doc_parts is not None:
@@ -521,27 +503,62 @@ class ChatService:
         from app.config import settings
         from app.services.file_service import FileService
 
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            resp = await client.post(
-                "https://openrouter.ai/api/v1/images",
-                headers={
-                    "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model":        image_model,
-                    "prompt":       prompt,
-                    "aspect_ratio": aspect_ratio,
-                    "output_format": "png",
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        headers = {
+            "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+        }
 
-        b64         = data["data"][0]["b64_json"]
-        image_bytes = base64.b64decode(b64)
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            if image_model.startswith("google/"):
+                # Gemini : chat/completions avec modalities
+                resp = await client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers=headers,
+                    json={
+                        "model": image_model,
+                        "modalities": ["text", "image"],
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [{"type": "text", "text": prompt}],
+                            }
+                        ],
+                    },
+                )
+                if not resp.is_success:
+                    raise ValueError(f"HTTP {resp.status_code} Gemini image: {resp.text[:400]}")
+                data = resp.json()
+                content = data["choices"][0]["message"].get("content", [])
+                if isinstance(content, str):
+                    raise ValueError("Gemini n'a pas retourné d'image (contenu texte uniquement)")
+                data_url = None
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "image_url":
+                        data_url = item["image_url"]["url"]
+                        break
+                if not data_url:
+                    raise ValueError(f"Aucune image dans la réponse Gemini. Content: {str(content)[:200]}")
+                b64 = data_url.split(",", 1)[1]
+                image_bytes = base64.b64decode(b64)
+            else:
+                # OpenAI et autres : unified images endpoint
+                resp = await client.post(
+                    "https://openrouter.ai/api/v1/images",
+                    headers=headers,
+                    json={
+                        "model": image_model,
+                        "prompt": prompt,
+                        "aspect_ratio": aspect_ratio,
+                        "output_format": "png",
+                    },
+                )
+                if not resp.is_success:
+                    raise ValueError(f"HTTP {resp.status_code} OpenAI image: {resp.text[:400]}")
+                data = resp.json()
+                b64 = data["data"][0]["b64_json"]
+                image_bytes = base64.b64decode(b64)
 
-        svc    = FileService()
+        svc = FileService()
         record = await asyncio.to_thread(
             svc.store_generated_file,
             user_id, filename, image_bytes, "image/png", conversation_id, None,
