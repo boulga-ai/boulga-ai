@@ -27,7 +27,7 @@ class CodeExecutionService:
         user_id: str,
         conversation_id: str | None = None,
         message_id: str | None = None,
-        timeout: int = 60,
+        timeout: int = 300,
     ) -> CodeResult:
         """
         Exécute du code Python dans une sandbox E2B isolée.

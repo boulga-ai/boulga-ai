@@ -406,6 +406,23 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
           useSubscriptionStore.getState().loadSubscription();
         },
 
+        onStreamInterrupted: () => {
+          const finalText = get().streamingText.trimEnd();
+          const docState = useDocStore.getState();
+          if (docState.isStreamingDoc) docState.finishDocStream();
+          set((s) => ({
+            messages: s.messages.map((m) =>
+              m.id === optimisticAssistantId
+                ? { ...m, content: finalText || " " }
+                : m,
+            ),
+            isStreaming: false,
+            streamingText: "",
+            _abortController: null,
+          }));
+          get().loadConversations();
+        },
+
         onError: (message, code) => {
           set((s) => ({
             messages: s.messages.filter(
@@ -551,6 +568,20 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
             }
           }
         },
+        onStreamInterrupted: () => {
+          const finalText = get().streamingText.trimEnd();
+          const docState = useDocStore.getState();
+          if (docState.isStreamingDoc) docState.finishDocStream();
+          set((s) => ({
+            messages: s.messages.map((m) =>
+              m.id === regenId ? { ...m, content: finalText || " " } : m,
+            ),
+            isStreaming: false,
+            streamingText: "",
+            _abortController: null,
+          }));
+        },
+
         onError: (errMsg) => {
           set((s) => ({
             messages: s.messages.filter((m) => m.id !== regenId),

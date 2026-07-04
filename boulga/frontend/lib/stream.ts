@@ -64,6 +64,7 @@ export interface StreamHandlers {
   onToolResult?: (tool: string, success: boolean, detail: Record<string, unknown>) => void;
   onDone: (messageId: string) => void;
   onError: (message: string, code?: string) => void;
+  onStreamInterrupted?: () => void;
 }
 
 // ── streamChat ────────────────────────────────────────────────────────────────
@@ -127,6 +128,7 @@ export function streamChat(
 
     const decoder = new TextDecoder();
     let buffer = "";
+    let fileWasReceived = false;
 
     try {
       while (true) {
@@ -184,6 +186,7 @@ export function streamChat(
                 handlers.onTitle(event.title as string);
                 break;
               case "file_ready":
+                fileWasReceived = true;
                 handlers.onFileReady?.({
                   file_id: event.file_id as string,
                   filename: event.filename as string,
@@ -241,7 +244,11 @@ export function streamChat(
       }
     } catch (err: unknown) {
       if ((err as { name?: string }).name !== "AbortError") {
-        handlers.onError("Connexion interrompue.");
+        if (fileWasReceived) {
+          handlers.onStreamInterrupted?.();
+        } else {
+          handlers.onError("Connexion interrompue.");
+        }
       }
     } finally {
       reader.releaseLock();

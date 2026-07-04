@@ -258,7 +258,7 @@ class ChatService:
                     user_id=user_id,
                     conversation_id=conversation_id,
                     message_id=None,
-                    timeout=120,
+                    timeout=300,
                 )
                 events: list[dict] = []
                 if result.error:
