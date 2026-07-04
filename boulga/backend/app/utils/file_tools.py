@@ -1,5 +1,7 @@
 """file_tools.py — Définitions des outils de génération de fichiers pour LiteLLM."""
 
+_IMAGE_PROVIDERS: set[str] = {"openai", "gemini"}
+
 FILE_GENERATION_TOOLS: list[dict] = [
     {
         "type": "function",
@@ -66,3 +68,49 @@ FILE_GENERATION_TOOLS: list[dict] = [
         },
     },
 ]
+
+IMAGE_GENERATION_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "generate_image",
+        "description": (
+            "Génère une image à partir d'une description textuelle. "
+            "Utilise cet outil uniquement quand l'utilisateur demande explicitement "
+            "une image, illustration, photo, logo ou visuel."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": (
+                        "Description détaillée de l'image en anglais. "
+                        "Inclure style, composition, couleurs et contexte."
+                    ),
+                },
+                "aspect_ratio": {
+                    "type": "string",
+                    "enum": ["1:1", "16:9", "9:16"],
+                    "description": "Format de l'image. Défaut : 1:1.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": (
+                        "Phrase décrivant ce que tu génères "
+                        "(ex: 'Je génère une illustration d\\'un marché africain animé'). "
+                        "Visible par l'utilisateur."
+                    ),
+                },
+            },
+            "required": ["prompt"],
+        },
+    },
+}
+
+
+def get_tools_for_provider(provider: str) -> list[dict]:
+    """Retourne les outils disponibles selon le provider sélectionné."""
+    tools = list(FILE_GENERATION_TOOLS)
+    if provider in _IMAGE_PROVIDERS:
+        tools.append(IMAGE_GENERATION_TOOL)
+    return tools

@@ -22,9 +22,14 @@ from app.prompts.chat_prompts import TITLE_GENERATION_PROMPT
 from app.prompts.tool_prompts import get_full_system_prompt
 from app.services.quota_service import QuotaService
 from app.services.subscription_service import SubscriptionService
-from app.utils.file_tools import FILE_GENERATION_TOOLS
+from app.utils.file_tools import get_tools_for_provider
 
 _ROUTING_TIERS: set[str] = {"source", "fleuve", "ocean"}
+
+_IMAGE_MODELS: dict[str, str] = {
+    "openai": "openai/gpt-image-1",
+    "gemini": "google/gemini-2.5-flash-image",
+}
 
 MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     "gemini-2.5-flash":  1_000_000,
@@ -295,6 +300,59 @@ class ChatService:
                     pass
                 return result_summary, events
 
+            if name == "generate_image":
+                if not await self._quota_svc.is_image_allowed(user_id, tier=tier):
+                    return "Erreur : quota d'images dépassé.", [
+                        stream_error(StreamErrorCode.IMAGE_QUOTA_EXCEEDED),
+                    ]
+                img_model = _IMAGE_MODELS.get(provider, "")
+                if not img_model:
+                    return "Génération d'image non disponible pour ce modèle.", [
+                        {"type": "tool_result", "tool": name, "success": False,
+                         "error": "Provider non supporté pour la génération d'image."},
+                    ]
+                import uuid as _uuid_img
+                prompt      = args.get("prompt", "")
+                aspect      = args.get("aspect_ratio", "1:1")
+                fname       = f"image_{_uuid_img.uuid4().hex[:8]}.png"
+                try:
+                    rec = await self._generate_image(
+                        prompt=prompt,
+                        image_model=img_model,
+                        aspect_ratio=aspect,
+                        user_id=user_id,
+                        conversation_id=conversation_id,
+                        filename=fname,
+                    )
+                    _generated_files.append(rec)
+                    fid = rec["file_id"]
+                    img_events: list[dict] = [
+                        {
+                            "type":      "file_ready",
+                            "file_id":   fid,
+                            "filename":  rec["name"],
+                            "mime_type": rec["mime_type"],
+                            "size":      rec["size_bytes"],
+                            "url":       f"/api/files/{fid}/download",
+                            "message_id": None,
+                        },
+                        {
+                            "type": "tool_result", "tool": name, "success": True,
+                            "output": f"Image générée : {fname}", "filename": fname,
+                        },
+                    ]
+                    try:
+                        await self._quota_svc.consume_image(user_id)
+                    except Exception:
+                        pass
+                    return f"Image générée avec succès : {fname}", img_events
+                except Exception as exc:
+                    logger.error("Image generation failed: %s", exc)
+                    return f"Erreur génération image : {exc}", [
+                        {"type": "tool_result", "tool": name, "success": False,
+                         "error": str(exc)[:200]},
+                    ]
+
             return f"Outil inconnu : {name}", []
 
         try:
@@ -303,7 +361,7 @@ class ChatService:
                 model_id=model_id,
                 messages=llm_messages,
                 system_prompt=system_prompt,
-                tools=FILE_GENERATION_TOOLS,
+                tools=get_tools_for_provider(provider),
                 tool_executor=_tool_executor,
                 effort=effort,
             ):
@@ -425,6 +483,55 @@ class ChatService:
 
         # k. Done
         yield {"type": "done", "message_id": assistant_msg["id"]}
+
+    # ── Génération d'image via OpenRouter ────────────────────────────────
+
+    async def _generate_image(
+        self,
+        prompt: str,
+        image_model: str,
+        aspect_ratio: str,
+        user_id: str,
+        conversation_id: str,
+        filename: str,
+    ) -> dict:
+        import base64
+        import httpx
+        from app.config import settings
+        from app.services.file_service import FileService
+
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            resp = await client.post(
+                "https://openrouter.ai/api/v1/images",
+                headers={
+                    "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model":        image_model,
+                    "prompt":       prompt,
+                    "aspect_ratio": aspect_ratio,
+                    "output_format": "png",
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        b64         = data["data"][0]["b64_json"]
+        image_bytes = base64.b64decode(b64)
+
+        svc    = FileService()
+        record = await asyncio.to_thread(
+            svc.store_generated_file,
+            user_id, filename, image_bytes, "image/png", conversation_id, None,
+        )
+
+        return {
+            "file_id":   record["id"],
+            "name":      filename,
+            "mime_type": "image/png",
+            "size_bytes": len(image_bytes),
+        }
 
     # ── Génération de document via Markdown étendu ─────────────────────
 

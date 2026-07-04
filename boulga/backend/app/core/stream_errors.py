@@ -17,11 +17,12 @@ from enum import Enum
 
 
 class StreamErrorCode(str, Enum):
-    QUOTA_EXCEEDED      = "quota_exceeded"
-    MODEL_ACCESS_DENIED = "model_access_denied"
-    FILE_QUOTA_EXCEEDED = "file_quota_exceeded"
+    QUOTA_EXCEEDED         = "quota_exceeded"
+    MODEL_ACCESS_DENIED    = "model_access_denied"
+    FILE_QUOTA_EXCEEDED    = "file_quota_exceeded"
+    IMAGE_QUOTA_EXCEEDED   = "image_quota_exceeded"
     CONVERSATION_NOT_FOUND = "conversation_not_found"
-    LLM_ERROR           = "llm_error"
+    LLM_ERROR              = "llm_error"
 
 
 # Messages lisibles par défaut (affichage de secours côté frontend).
@@ -29,6 +30,7 @@ STREAM_ERROR_MESSAGES: dict[StreamErrorCode, str] = {
     StreamErrorCode.QUOTA_EXCEEDED:         "Quota de messages atteint.",
     StreamErrorCode.MODEL_ACCESS_DENIED:    "Ce modèle n'est pas inclus dans votre offre actuelle.",
     StreamErrorCode.FILE_QUOTA_EXCEEDED:    "Limite de génération de fichiers atteinte.",
+    StreamErrorCode.IMAGE_QUOTA_EXCEEDED:   "Limite de génération d'images atteinte.",
     StreamErrorCode.CONVERSATION_NOT_FOUND: "Conversation introuvable.",
     StreamErrorCode.LLM_ERROR:              "Une erreur est survenue. Veuillez réessayer.",
 }
