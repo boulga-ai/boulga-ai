@@ -140,6 +140,8 @@ export function streamChat(
 
         for (const line of lines) {
           const trimmed = line.trim();
+          // Ignore SSE comments (keep-alive) et lignes vides
+          if (!trimmed || trimmed.startsWith(":")) continue;
           if (!trimmed.startsWith("data:")) continue;
 
           const jsonStr = trimmed.slice("data:".length).trim();
@@ -154,78 +156,86 @@ export function streamChat(
 
           const type = event.type as string;
 
-          switch (type) {
-            case "conversation":
-              handlers.onConversation(
-                event.id as string,
-                event.is_new as boolean,
-              );
-              break;
-            case "routing":
-              handlers.onRouting?.({
-                provider: event.provider as string,
-                model: event.model as string,
-                reason: event.reason as string,
-              });
-              break;
-            case "chunk":
-              handlers.onChunk(event.text as string);
-              break;
-            case "doc_chunk":
-              handlers.onDocChunk?.(event.text as string);
-              break;
-            case "title":
-              handlers.onTitle(event.title as string);
-              break;
-            case "file_ready":
-              handlers.onFileReady?.({
-                file_id: event.file_id as string,
-                filename: event.filename as string,
-                mime_type: event.mime_type as string,
-                size: event.size as number,
-                url: event.url as string,
-                message_id: event.message_id as string | null,
-              });
-              break;
-            case "file_message_id":
-              handlers.onFileMessageId?.({
-                file_id: event.file_id as string,
-                message_id: event.message_id as string,
-              });
-              break;
-            case "tool_start":
-              handlers.onToolStart?.(
-                event.id as string,
-                event.tool as string,
-                (event.args ?? {}) as Record<string, unknown>,
-              );
-              break;
-            case "tool_result":
-              handlers.onToolResult?.(
-                event.tool as string,
-                event.success as boolean,
-                {
-                  output: event.output,
-                  error: event.error,
-                  filename: event.filename,
-                },
-              );
-              break;
-            case "image_not_supported":
-              handlers.onImageNotSupported?.(
-                event.provider as string,
-                event.message as string,
-              );
-              break;
-            case "done":
-              handlers.onDone(event.message_id as string);
-              break;
-            case "error":
-              handlers.onError(
-                event.message as string,
-                event.code as string | undefined,
-              );
-              break;
+          // ping ignoré silencieusement
+          if (type === "ping") continue;
+
+          try {
+            switch (type) {
+              case "conversation":
+                handlers.onConversation(
+                  event.id as string,
+                  event.is_new as boolean,
+                );
+                break;
+              case "routing":
+                handlers.onRouting?.({
+                  provider: event.provider as string,
+                  model: event.model as string,
+                  reason: event.reason as string,
+                });
+                break;
+              case "chunk":
+                handlers.onChunk(event.text as string);
+                break;
+              case "doc_chunk":
+                handlers.onDocChunk?.(event.text as string);
+                break;
+              case "title":
+                handlers.onTitle(event.title as string);
+                break;
+              case "file_ready":
+                handlers.onFileReady?.({
+                  file_id: event.file_id as string,
+                  filename: event.filename as string,
+                  mime_type: event.mime_type as string,
+                  size: event.size as number,
+                  url: event.url as string,
+                  message_id: event.message_id as string | null,
+                });
+                break;
+              case "file_message_id":
+                handlers.onFileMessageId?.({
+                  file_id: event.file_id as string,
+                  message_id: event.message_id as string,
+                });
+                break;
+              case "tool_start":
+                handlers.onToolStart?.(
+                  event.id as string,
+                  event.tool as string,
+                  (event.args ?? {}) as Record<string, unknown>,
+                );
+                break;
+              case "tool_result":
+                handlers.onToolResult?.(
+                  event.tool as string,
+                  event.success as boolean,
+                  {
+                    output: event.output,
+                    error: event.error,
+                    filename: event.filename,
+                  },
+                );
+                break;
+              case "image_not_supported":
+                handlers.onImageNotSupported?.(
+                  event.provider as string,
+                  event.message as string,
+                );
+                break;
+              case "done":
+                handlers.onDone(event.message_id as string);
+                break;
+              case "error":
+                handlers.onError(
+                  event.message as string,
+                  event.code as string | undefined,
+                );
+                break;
+            }
+          } catch (handlerErr) {
+            // Un handler a planté — on logue sans couper le stream
+            console.error("[stream] handler error for type", type, handlerErr);
           }
         }
       }
