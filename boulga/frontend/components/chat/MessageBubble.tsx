@@ -366,6 +366,13 @@ export default function MessageBubble({
 
             {hasSteps && <AgentSteps steps={agentSteps} />}
 
+            {/* Skeleton pendant la génération d'image */}
+            {isStreaming && agentSteps.some((s) => s.tool === "generate_image" && s.status === "running") && (
+              <div className="mt-3 w-64 h-64 rounded-xl overflow-hidden bg-neutral-100 animate-pulse flex items-end justify-center pb-3">
+                <span className="text-[11px] text-neutral-300">Génération en cours…</span>
+              </div>
+            )}
+
             {/* Images générées — affichées inline comme ChatGPT */}
             {message.inlineImages && message.inlineImages.length > 0 && (
               <div className="mt-3 space-y-3">

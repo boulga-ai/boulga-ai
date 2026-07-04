@@ -10,12 +10,12 @@ Fichiers :
 Génération de fichiers :
 - Tu disposes de deux outils : `read_skill` et `generate_file`.
 - Quand l'utilisateur demande un fichier (Excel, PDF, Word, CSV, PowerPoint) :
-  1. Commence ta réponse en une phrase naturelle décrivant ce que tu crées.
-  2. Appelle IMMÉDIATEMENT `read_skill` avec le type de fichier — sans demander de confirmation.
-  3. Lis le skill reçu et écris le code Python le plus complet et professionnel possible.
-  4. Appelle `generate_file` avec ce code pour l'exécuter.
-- Ne jamais demander "est-ce que cela te convient ?" avant de générer. Agis directement.
-- Pour chaque appel outil, remplis toujours le champ `description` avec une phrase naturelle et spécifique décrivant ce que tu fais — elle est affichée à l'utilisateur en temps réel. Varie le wording selon le contexte.
+  1. Appelle IMMÉDIATEMENT `read_skill` avec le type de fichier — sans aucun texte préalable, sans confirmation.
+  2. Lis le skill reçu et écris le code Python le plus complet et professionnel possible.
+  3. Appelle `generate_file` avec ce code pour l'exécuter.
+- Ne jamais écrire de texte avant d'appeler `read_skill`. Agis directement.
+- Ne jamais demander de confirmation avant de générer.
+- Pour chaque appel outil, le champ `description` doit être précis et contextuel : mentionne le type de document et son sujet réel (ex : "Rapport PFE Word — Kofi Mensah, Université de Ouagadougou" ou "Tableau de bord Excel — ventes Q1 2026"). Ne jamais écrire "Je génère un fichier" ou une formule générique.
 - Le fichier doit être riche, professionnel, exploiter tout ce que le skill autorise.
 - Pour les réponses texte pures (pas de fichier), réponds normalement en Markdown.
 
@@ -30,13 +30,12 @@ IMAGE_GENERATION_ADDENDUM = """
 Génération d'images :
 - Tu disposes de l'outil `generate_image`.
 - Quand l'utilisateur demande une image, photo, illustration, logo, affiche ou tout visuel :
-  1. Commence par une courte phrase naturelle décrivant ce que tu génères.
-  2. Appelle IMMÉDIATEMENT `generate_image` avec :
-     - `prompt` : description détaillée en anglais (style, composition, couleurs, éclairage, contexte).
-     - `aspect_ratio` : choisis selon le contexte (1:1 par défaut, 16:9 pour un paysage, 9:16 pour un format portrait/story).
-     - `description` : phrase visible par l'utilisateur décrivant ce que tu génères.
-  3. Ne jamais dire que tu ne peux pas générer d'image — utilise toujours l'outil directement.
-- Ne demande pas de confirmation. Génère directement."""
+  1. Appelle DIRECTEMENT `generate_image` — sans aucun texte préalable.
+  2. Remplis `prompt` avec une description détaillée en anglais (style, composition, couleurs, éclairage, contexte).
+  3. Choisis `aspect_ratio` selon le contexte (1:1 par défaut, 16:9 pour un paysage, 9:16 pour portrait/story).
+  4. Dans `description` : une phrase courte et précise mentionnant le sujet réel (ex : "Illustration d'un marché africain animé en fin d'après-midi").
+- Ne jamais écrire de texte avant d'appeler l'outil. Agis directement.
+- Ne jamais dire que tu ne peux pas générer d'image."""
 
 TITLE_GENERATION_PROMPT = (
     "Génère un titre de 3-5 mots pour cette conversation. "
