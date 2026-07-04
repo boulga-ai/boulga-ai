@@ -1,6 +1,11 @@
 // boulga/frontend/store/docStore.ts
 import { create } from "zustand";
 
+// BroadcastChannel : synchronise les artifacts entre onglets
+const _bc = typeof BroadcastChannel !== "undefined"
+  ? new BroadcastChannel("boulga-artifacts")
+  : null;
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface DocumentState {
@@ -113,6 +118,7 @@ export const useDocStore = create<DocStoreState & DocStoreActions>((set, get) =>
 
   addArtifact: (artifact: Artifact) => {
     const { artifacts } = get();
+    if (artifacts.some((a) => a.id === artifact.id)) return;
     const newArtifacts = [...artifacts, artifact];
     set({
       artifacts: newArtifacts,
@@ -120,6 +126,7 @@ export const useDocStore = create<DocStoreState & DocStoreActions>((set, get) =>
       currentDocument: null,
       panelOpen: true,
     });
+    _bc?.postMessage({ type: "artifact_added", artifact });
   },
 
   updateArtifactMessageId: (fileId: string, messageId: string) => {
@@ -167,3 +174,12 @@ export const useDocStore = create<DocStoreState & DocStoreActions>((set, get) =>
     set({ isStreamingDoc: false });
   },
 }));
+
+// Réception depuis les autres onglets (après création du store)
+if (_bc) {
+  _bc.onmessage = (e) => {
+    if (e.data?.type === "artifact_added") {
+      useDocStore.getState().addArtifact(e.data.artifact);
+    }
+  };
+}

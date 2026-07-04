@@ -240,7 +240,7 @@ class ChatService:
                 ]
 
             if name == "generate_file":
-                if not await self._quota_svc.is_file_allowed(user_id):
+                if not await self._quota_svc.is_file_allowed(user_id, tier=tier):
                     return "Erreur : quota de fichiers dépassé.", [
                         stream_error(StreamErrorCode.FILE_QUOTA_EXCEEDED),
                         {"type": "tool_result", "tool": name, "success": False,
@@ -270,13 +270,14 @@ class ChatService:
                     return f"Exécuté. stdout={result.stdout[:200]}", events
                 for f in result.files:
                     _generated_files.append(f)
+                    fid = f.get("file_id")
                     events.append({
                         "type":      "file_ready",
-                        "file_id":   f.get("file_id"),
+                        "file_id":   fid,
                         "filename":  f.get("name"),
                         "mime_type": f.get("mime_type"),
                         "size":      f.get("size_bytes"),
-                        "url":       f.get("signed_url"),
+                        "url":       f"/api/files/{fid}/download",
                         "message_id": None,
                     })
                 events.append({
@@ -487,7 +488,7 @@ class ChatService:
             return
 
         file_id = record["id"]
-        download_url = record.get("signed_url") or f"/api/files/{file_id}/download"
+        download_url = f"/api/files/{file_id}/download"
 
         try:
             import json as _json
