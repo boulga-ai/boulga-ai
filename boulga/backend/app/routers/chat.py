@@ -10,7 +10,7 @@ from app.utils.sse import sse_event
 
 router = APIRouter()
 
-_KEEPALIVE_INTERVAL = 15
+_KEEPALIVE_INTERVAL = 10
 _SENTINEL = object()
 
 
@@ -52,6 +52,8 @@ async def chat(
                 try:
                     item = await asyncio.wait_for(queue.get(), timeout=_KEEPALIVE_INTERVAL)
                 except asyncio.TimeoutError:
+                    # Commentaire SSE reconnu par tous les proxies/load balancers
+                    yield ": keep-alive\n\n"
                     yield sse_event({"type": "ping"})
                     continue
 

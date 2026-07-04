@@ -314,7 +314,16 @@ class LLMManager:
                     "args": args,
                 }
 
-                result_str, sse_events = await tool_executor(tc_data["name"], args)
+                # Keep-alive : ping toutes les 15s pendant l'exécution de l'outil
+                # pour éviter que le navigateur/proxy coupe la connexion SSE silencieuse.
+                import asyncio as _asyncio
+                _tool_task = _asyncio.create_task(tool_executor(tc_data["name"], args))
+                while True:
+                    _done, _ = await _asyncio.wait({_tool_task}, timeout=15.0)
+                    if _done:
+                        result_str, sse_events = _tool_task.result()
+                        break
+                    yield {"type": "ping"}
 
                 for ev in sse_events:
                     yield ev
