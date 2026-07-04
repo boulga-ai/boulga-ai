@@ -316,7 +316,7 @@ class ChatService:
                 return result_summary, events
 
             if name == "generate_image":
-                if not await self._quota_svc.is_image_allowed(user_id, tier=tier):
+                if not await self._quota_svc.is_image_allowed(user_id):
                     return "Erreur : quota d'images dépassé.", [
                         stream_error(StreamErrorCode.IMAGE_QUOTA_EXCEEDED),
                     ]
