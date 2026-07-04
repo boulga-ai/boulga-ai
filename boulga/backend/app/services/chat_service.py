@@ -207,7 +207,7 @@ class ChatService:
         # e. Préparer contexte
         history         = await asyncio.to_thread(self._msg_repo.list_recent_by_conversation, UUID(conversation_id))
         text_context, binary_files = await asyncio.to_thread(self._prepare_files, file_ids, provider)
-        system_prompt   = get_full_system_prompt(tool_slug)
+        system_prompt   = get_full_system_prompt(tool_slug, provider=provider)
         history_for_llm = await self._prepare_history(history, model_id)
 
         llm_messages = [
