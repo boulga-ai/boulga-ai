@@ -22,9 +22,24 @@ from app.prompts.chat_prompts import TITLE_GENERATION_PROMPT
 from app.prompts.tool_prompts import get_full_system_prompt
 from app.services.quota_service import QuotaService
 from app.services.subscription_service import SubscriptionService
-from app.utils.file_tools import get_tools_for_provider
+from app.utils.file_tools import get_tools_for_provider, IMAGE_GENERATION_TOOL
 
 _ROUTING_TIERS: set[str] = {"source", "fleuve", "ocean"}
+
+# Détection d'intention image — déclenche tool_choice="required" + outil unique
+_IMAGE_INTENT_RE = _re_svc.compile(
+    r"(?:génère?r?|créer?|crée?|fais|dessine?r?|produis|montre?[- ]moi|donne?[- ]moi|"
+    r"generate|create|draw|make|show\s+me|give\s+me)"
+    r".{0,30}?"
+    r"(?:image|photo|illustration|logo|visuel|affiche|poster|dessin|portrait|picture|graphic)"
+    r"|"
+    r"(?:image|photo|illustration|photo|picture)\s+(?:de|d['']\w|du|des|of|a\s|an\s)",
+    _re_svc.IGNORECASE,
+)
+
+def _is_image_intent(text: str) -> bool:
+    return bool(_IMAGE_INTENT_RE.search(text))
+
 
 _IMAGE_MODELS: dict[str, str] = {
     "openai": "openai/gpt-image-1",
@@ -355,15 +370,21 @@ class ChatService:
 
             return f"Outil inconnu : {name}", []
 
+        # Si intention image détectée : forcer l'outil — le modèle ne peut pas refuser
+        _force_image = provider in _IMAGE_MODELS and _is_image_intent(message)
+        _chat_tools = [IMAGE_GENERATION_TOOL] if _force_image else get_tools_for_provider(provider)
+        _tool_choice = "required" if _force_image else "auto"
+
         try:
             async for event in llm_manager.stream_chat_with_tools(
                 provider=provider,
                 model_id=model_id,
                 messages=llm_messages,
                 system_prompt=system_prompt,
-                tools=get_tools_for_provider(provider),
+                tools=_chat_tools,
                 tool_executor=_tool_executor,
                 effort=effort,
+                tool_choice=_tool_choice,
             ):
                 if event["type"] == "text":
                     if _doc_parts is not None:

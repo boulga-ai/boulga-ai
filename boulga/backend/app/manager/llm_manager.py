@@ -214,6 +214,7 @@ class LLMManager:
         tool_executor=None,
         effort: str = "medium",
         enable_search: bool = False,
+        tool_choice: str = "auto",
     ) -> AsyncIterator[dict]:
         """
         Streaming avec boucle agentique : le LLM peut appeler des outils
@@ -242,7 +243,7 @@ class LLMManager:
             }
             if tools:
                 kwargs["tools"] = tools
-                kwargs["tool_choice"] = "auto"
+                kwargs["tool_choice"] = tool_choice
 
             response = await _completion_with_fallback(kwargs)
 
