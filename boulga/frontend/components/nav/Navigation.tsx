@@ -11,7 +11,7 @@ import {
   IconDots,
   IconX,
 } from "@tabler/icons-react";
-import { useState } from "react";
+import { useState, type ComponentType } from "react";
 import { useAuthStore } from "@/store/authStore";
 import type { Tier } from "@/types";
 
@@ -55,6 +55,39 @@ const MOBILE_TABS = [
   { label: "Paramètres", href: "/settings",   icon: IconSettings },
 ];
 
+type RailIcon = ComponentType<{ size?: number | string; className?: string }>;
+
+// Icône dans un chip discret (teinte légère à l'état actif) plutôt qu'un pavé plein —
+// la zone cliquable reste 56px, seul le chip visible fait 40px.
+function RailItem({
+  href, label, icon: Icon, active, locked,
+}: { href: string; label: string; icon: RailIcon; active: boolean; locked?: boolean }) {
+  if (locked) {
+    return (
+      <div
+        className="flex items-center justify-center w-14 h-14 flex-shrink-0"
+        title="Disponible à partir de Source"
+      >
+        <div className="flex items-center justify-center w-10 h-10 rounded-lg text-neutral-text-tertiary opacity-40 cursor-not-allowed">
+          <Icon size={22} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Link href={href} className="flex items-center justify-center w-14 h-14 flex-shrink-0" title={label}>
+      <div
+        className={`flex items-center justify-center w-10 h-10 rounded-lg transition-colors duration-200 ${
+          active ? "bg-blue-50 text-blue-700" : "text-neutral-text-tertiary hover:bg-neutral-bg"
+        }`}
+      >
+        <Icon size={22} />
+      </div>
+    </Link>
+  );
+}
+
 export default function Navigation() {
   const pathname = usePathname();
   const user = useAuthStore((s) => s.user);
@@ -74,93 +107,52 @@ export default function Navigation() {
         {/* Logo */}
         <Link
           href="/"
-          className="flex items-center justify-center h-16 flex-shrink-0 hover:bg-neutral-bg transition-colors duration-200"
+          className="flex items-center justify-center h-14 flex-shrink-0"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icons/icon.svg" alt="Boulga" className="w-8 h-8 rounded-lg" />
+          <img src="/icons/icon.svg" alt="Boulga" className="w-6 h-6 rounded-md" />
         </Link>
 
         <hr className="border-neutral-border" />
 
         {/* Liens principaux */}
-        <div className="flex-1 flex flex-col gap-3 p-2">
-          {MAIN_NAV.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.href);
-            const locked = item.gated && !hasCompareAccess;
-
-            if (locked) {
-              return (
-                <div
-                  key={item.href}
-                  className="flex items-center justify-center w-14 h-14 rounded-md cursor-not-allowed text-neutral-text-tertiary opacity-40"
-                  title="Disponible à partir de Source"
-                >
-                  <Icon size={24} />
-                </div>
-              );
-            }
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center justify-center w-14 h-14 rounded-md transition-colors duration-200 ${
-                  active
-                    ? "bg-blue-700 text-neutral-white"
-                    : "text-neutral-text-tertiary hover:bg-neutral-bg"
-                }`}
-                title={item.label}
-              >
-                <Icon size={24} />
-              </Link>
-            );
-          })}
+        <div className="flex-1 flex flex-col gap-1 p-2 pt-3">
+          {MAIN_NAV.map((item) => (
+            <RailItem
+              key={item.href}
+              href={item.href}
+              label={item.label}
+              icon={item.icon}
+              active={isActive(item.href)}
+              locked={item.gated && !hasCompareAccess}
+            />
+          ))}
         </div>
 
         <hr className="border-neutral-border" />
 
         {/* Liens du bas */}
-        <div className="flex flex-col gap-3 p-2 pb-4">
-          {BOTTOM_NAV.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center justify-center w-14 h-14 rounded-md transition-colors duration-200 ${
-                  active
-                    ? "bg-blue-700 text-neutral-white"
-                    : "text-neutral-text-tertiary hover:bg-neutral-bg"
-                }`}
-                title={item.label}
-              >
-                <Icon size={24} />
-              </Link>
-            );
-          })}
+        <div className="flex flex-col gap-1 p-2 pb-3">
+          {BOTTOM_NAV.map((item) => (
+            <RailItem
+              key={item.href}
+              href={item.href}
+              label={item.label}
+              icon={item.icon}
+              active={isActive(item.href)}
+            />
+          ))}
           {isAdmin && (
-            <Link
-              href="/admin"
-              className={`flex items-center justify-center w-14 h-14 rounded-md transition-colors duration-200 ${
-                isActive("/admin")
-                  ? "bg-blue-700 text-neutral-white"
-                  : "text-neutral-text-tertiary hover:bg-neutral-bg"
-              }`}
-              title="Administration"
-            >
-              <IconShield size={24} />
-            </Link>
+            <RailItem href="/admin" label="Administration" icon={IconShield} active={isActive("/admin")} />
           )}
 
           {/* Compte — bulle d'initiale */}
           <Link
             href="/settings"
-            className="flex items-center justify-center w-14 h-14 rounded-md transition-colors duration-200 hover:bg-neutral-bg"
+            className="flex items-center justify-center w-14 h-14 flex-shrink-0"
             title={user?.name ?? "Compte"}
           >
-            <div className="w-9 h-9 rounded-full bg-blue-700 text-neutral-white text-[13px] font-medium flex items-center justify-center flex-shrink-0">
+            <div className="w-8 h-8 rounded-full bg-blue-700 text-neutral-white text-[12px] font-medium flex items-center justify-center flex-shrink-0 hover:bg-blue-900 transition-colors duration-200">
               {(user?.name ?? user?.email ?? "?").trim().charAt(0).toUpperCase()}
             </div>
           </Link>

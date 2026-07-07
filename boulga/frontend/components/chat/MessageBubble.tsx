@@ -272,12 +272,12 @@ export default function MessageBubble({
       )}
 
       <div className="flex justify-start mb-4 group">
-        <div className="w-full max-w-[90%] md:max-w-[70%]">
+        <div className="w-full">
           <div className="text-[11px] text-neutral-text-tertiary mb-1 pl-1 font-body">
             {providerLabel(message.provider, message.model_id)}
           </div>
 
-          <div className="text-[15px] text-marine">
+          <div className="text-[16px] text-marine">
             {isWaiting ? (
               <span className="flex gap-1 py-1">
                 <span className="thinking-dot" />
