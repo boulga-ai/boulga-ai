@@ -25,7 +25,7 @@ _ROUTING_TIERS: set[str] = {"source", "fleuve", "ocean"}
 
 _IMAGE_MODELS: dict[str, str] = {
     "openai": "openai/gpt-5-image",
-    "gemini": "google/gemini-2.5-flash-image-preview",
+    "gemini": "google/gemini-2.5-flash-image",
 }
 
 MODEL_CONTEXT_WINDOWS: dict[str, int] = {
@@ -525,16 +525,22 @@ class ChatService:
                 if not resp.is_success:
                     raise ValueError(f"HTTP {resp.status_code} Gemini image: {resp.text[:400]}")
                 data = resp.json()
-                content = data["choices"][0]["message"].get("content", [])
-                if isinstance(content, str):
-                    raise ValueError("Gemini n'a pas retourné d'image (contenu texte uniquement)")
+                message = data["choices"][0]["message"]
                 data_url = None
-                for item in content:
-                    if isinstance(item, dict) and item.get("type") == "image_url":
-                        data_url = item["image_url"]["url"]
-                        break
+
+                images = message.get("images") or []
+                if images:
+                    data_url = images[0]["image_url"]["url"]
+                else:
+                    content = message.get("content", [])
+                    if not isinstance(content, str):
+                        for item in content:
+                            if isinstance(item, dict) and item.get("type") == "image_url":
+                                data_url = item["image_url"]["url"]
+                                break
+
                 if not data_url:
-                    raise ValueError(f"Aucune image dans la réponse Gemini. Content: {str(content)[:200]}")
+                    raise ValueError(f"Aucune image dans la réponse Gemini. Message: {str(message)[:200]}")
                 b64 = data_url.split(",", 1)[1]
                 image_bytes = base64.b64decode(b64)
             else:
