@@ -15,7 +15,7 @@ export default function Card({
       className={`
         bg-neutral-white
         border border-neutral-border
-        rounded-lg
+        rounded-lg shadow-xs
         p-4
         ${className}
       `}

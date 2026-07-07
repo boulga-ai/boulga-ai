@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { API_URL } from "@/lib/constants";
 import { useAuthStore } from "@/store/authStore";
+import { Input, Button } from "@/components/ui";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -46,54 +47,42 @@ export default function LoginPage() {
     <div className="min-h-screen bg-neutral-bg flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
-        <div className="text-center mb-8">
-          <h1 className="text-display font-display text-marine">Boulga</h1>
-          <p className="text-body font-body text-neutral-text-secondary mt-1">
+        <div className="flex flex-col items-center gap-3 mb-8">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icons/icon.svg" alt="" className="w-11 h-11 rounded-xl shadow-xs" />
+          <h1 className="text-h1 font-display text-marine">Boulga</h1>
+          <p className="text-body font-body text-neutral-text-secondary -mt-1">
             Connectez-vous à votre compte
           </p>
         </div>
 
         <div className="bg-neutral-white border border-neutral-border rounded-xl shadow-sm p-8">
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-ui font-body font-medium text-marine mb-1">
-                Email
-              </label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="vous@exemple.com"
-                className="w-full h-10 px-3 border border-neutral-border rounded-md text-body font-body text-marine bg-neutral-white focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-transparent transition-shadow duration-100"
-              />
-            </div>
+            <Input
+              type="email"
+              label="Email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="vous@exemple.com"
+            />
 
-            <div>
-              <label className="block text-ui font-body font-medium text-marine mb-1">
-                Mot de passe
-              </label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Votre mot de passe"
-                className="w-full h-10 px-3 border border-neutral-border rounded-md text-body font-body text-marine bg-neutral-white focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-transparent transition-shadow duration-100"
-              />
-            </div>
+            <Input
+              type="password"
+              label="Mot de passe"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Votre mot de passe"
+            />
 
             {error && (
               <p className="text-caption font-body text-error">{error}</p>
             )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2.5 bg-blue-700 text-neutral-white text-ui font-body font-medium rounded-lg hover:bg-blue-900 transition-colors duration-100 disabled:opacity-60 disabled:cursor-not-allowed mt-2"
-            >
+            <Button type="submit" variant="primary" size="lg" className="w-full mt-2" disabled={loading}>
               {loading ? "Connexion…" : "Se connecter"}
-            </button>
+            </Button>
           </form>
 
           <div className="mt-4 text-center">

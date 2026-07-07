@@ -46,9 +46,9 @@ export default function QuotaBadge() {
   if (!loaded) return null;
 
   const badgeColor = isExhausted
-    ? "bg-red-50 border-error text-error"
+    ? "bg-tint-error border-error text-error"
     : isWarning
-    ? "bg-orange-50 border-warning text-warning"
+    ? "bg-tint-warning border-warning text-warning"
     : "bg-neutral-bg border-neutral-border text-neutral-text-secondary";
 
   const label = TIER_LABELS[tier] ?? tier;

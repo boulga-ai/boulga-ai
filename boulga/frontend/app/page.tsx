@@ -159,8 +159,8 @@ const LLMS = [
     name: "Gemini",
     provider: "Google",
     icon: IconFileSearch,
-    iconColor: "text-[#1A73E8]",
-    iconBg: "bg-[#E8F0FE]",
+    iconColor: "text-provider-google",
+    iconBg: "bg-provider-google-bg",
     description:
       "Analyse de fichiers longs, PDF et recherche documentaire. Idéal pour synthétiser de grandes quantités d'informations.",
     active: true,
@@ -170,8 +170,8 @@ const LLMS = [
     name: "Claude",
     provider: "Anthropic",
     icon: IconBrain,
-    iconColor: "text-[#8B5CF6]",
-    iconBg: "bg-[#F3E8FF]",
+    iconColor: "text-provider-anthropic",
+    iconBg: "bg-provider-anthropic-bg",
     description:
       "Raisonnement structuré, analyse juridique et textes complexes. Reconnu pour sa précision et ses réponses nuancées.",
     active: true,
@@ -181,8 +181,8 @@ const LLMS = [
     name: "ChatGPT",
     provider: "OpenAI",
     icon: IconPencil,
-    iconColor: "text-[#10A37F]",
-    iconBg: "bg-[#E8F5F2]",
+    iconColor: "text-provider-openai",
+    iconBg: "bg-provider-openai-bg",
     description:
       "Créativité, rédaction et brainstorming. Polyvalent et performant sur une large variété de tâches.",
     active: true,
@@ -192,8 +192,8 @@ const LLMS = [
     name: "DeepSeek",
     provider: "DeepSeek AI",
     icon: IconCode,
-    iconColor: "text-[#1565C0]",
-    iconBg: "bg-[#E3F2FD]",
+    iconColor: "text-blue-700",
+    iconBg: "bg-blue-50",
     description:
       "Code, développement et débogage. Spécialisé dans la génération et l'analyse de code avec une grande rigueur technique.",
     active: true,
@@ -219,11 +219,10 @@ export default function LandingPage() {
       <header className="sticky top-0 z-50 bg-neutral-white/95 backdrop-blur-sm border-b border-neutral-border">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           {/* Logo */}
-          <Link
-            href="/"
-            className="font-display text-[22px] text-marine leading-none"
-          >
-            Boulga
+          <Link href="/" className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icons/icon.svg" alt="" className="w-7 h-7 rounded-md" />
+            <span className="font-display text-[20px] text-marine leading-none">Boulga</span>
           </Link>
 
           {/* Desktop nav */}
@@ -357,7 +356,7 @@ export default function LandingPage() {
               return (
                 <div
                   key={llm.id}
-                  className={`bg-neutral-white border rounded-lg p-6 flex flex-col ${
+                  className={`bg-neutral-white border rounded-lg p-6 flex flex-col shadow-xs ${
                     llm.active
                       ? "border-blue-700 shadow-sm"
                       : "border-neutral-border"
@@ -460,10 +459,10 @@ export default function LandingPage() {
                   {/* Gemini */}
                   <div className="px-4 pt-3">
                     <div className="flex items-center gap-1.5 mb-3">
-                      <div className="w-4 h-4 rounded bg-[#E8F0FE] flex items-center justify-center">
-                        <IconFileSearch size={10} className="text-[#1A73E8]" />
+                      <div className="w-4 h-4 rounded bg-provider-google-bg flex items-center justify-center">
+                        <IconFileSearch size={10} className="text-provider-google" />
                       </div>
-                      <span className="text-caption font-body font-medium text-[#1A73E8]">
+                      <span className="text-caption font-body font-medium text-provider-google">
                         Gemini Flash
                       </span>
                     </div>
@@ -479,8 +478,8 @@ export default function LandingPage() {
                   </div>
                   <div className="px-4 pt-3">
                     <div className="flex items-center gap-1.5 mb-3">
-                      <div className="w-4 h-4 rounded bg-[#F3E8FF] flex items-center justify-center">
-                        <IconBrain size={10} className="text-[#8B5CF6]" />
+                      <div className="w-4 h-4 rounded bg-provider-anthropic-bg flex items-center justify-center">
+                        <IconBrain size={10} className="text-provider-anthropic" />
                       </div>
                       <span className="text-caption font-body font-medium text-neutral-text-tertiary">
                         Claude Sonnet
@@ -539,8 +538,8 @@ export default function LandingPage() {
               },
               {
                 icon: IconBrandWhatsapp,
-                iconColor: "text-[#25D366]",
-                iconBg: "bg-[#E8FBF0]",
+                iconColor: "text-provider-whatsapp",
+                iconBg: "bg-tint-success",
                 title: "Langues locales et WhatsApp",
                 description:
                   "Support du Wolof, Dioula, Mooré et Bambara. Utilisez Boulga directement depuis WhatsApp, sans app à installer.",
@@ -614,8 +613,8 @@ export default function LandingPage() {
                 key={plan.id}
                 className={`relative bg-neutral-white rounded-lg border flex-shrink-0 w-64 xl:w-auto flex flex-col overflow-hidden ${
                   plan.popular
-                    ? "border-blue-700 ring-2 ring-blue-700"
-                    : "border-neutral-border"
+                    ? "border-blue-700 ring-2 ring-blue-700 shadow-md"
+                    : "border-neutral-border shadow-xs"
                 }`}
               >
                 {plan.popular && (

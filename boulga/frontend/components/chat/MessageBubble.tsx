@@ -4,23 +4,16 @@ import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
-import {
-  IconFileText, IconFileTypePdf, IconFileSpreadsheet, IconDownload,
-} from "@tabler/icons-react";
+import { IconDownload } from "@tabler/icons-react";
 import type { Message, AgentStep } from "@/types";
 import { useDocStore } from "@/store/docStore";
+import { FileChip, formatBytes } from "@/components/ui";
 import CodeBlock from "./CodeBlock";
 import Lightbox from "./Lightbox";
 import BubbleActions from "./BubbleActions";
 import AgentSteps from "./AgentSteps";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} o`;
-  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} Ko`;
-  return `${(bytes / 1048576).toFixed(1)} Mo`;
-}
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -70,8 +63,6 @@ function providerLabel(provider?: string, modelId?: string): string {
 
 // ── FileCard ─────────────────────────────────────────────────────────────────
 
-const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-
 function FileCard({ messageId }: { messageId: string }) {
   const artifacts = useDocStore((s) => s.artifacts);
   const goToArtifact = useDocStore((s) => s.goToArtifact);
@@ -82,58 +73,20 @@ function FileCard({ messageId }: { messageId: string }) {
 
   return (
     <div className="mt-3 space-y-2">
-      {files.map((file) => {
-        const isPdf  = file.mimeType === "application/pdf";
-        const isXlsx = file.mimeType === XLSX_MIME;
-
-        const Icon      = isPdf ? IconFileTypePdf : isXlsx ? IconFileSpreadsheet : IconFileText;
-        const iconColor = isPdf ? "text-red-600"  : isXlsx ? "text-green-600"  : "text-blue-600";
-        const iconBg    = isPdf ? "bg-red-50"     : isXlsx ? "bg-green-50"     : "bg-blue-50";
-        const label     = isPdf ? "PDF"           : isXlsx ? "Excel"           : "Word";
-
-        const handleOpen = () => {
-          const idx = artifacts.findIndex((a) => a.id === file.id);
-          if (idx >= 0) goToArtifact(idx);
-          openPanel();
-        };
-
-        const handleDownload = (e: React.MouseEvent) => {
-          e.stopPropagation();
-          downloadFile(file.url, file.name);
-        };
-
-        return (
-          <div
-            key={file.id}
-            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl border bg-white hover:bg-neutral-50 transition-colors"
-            style={{ borderColor: "#E0E4EC" }}
-          >
-            <button
-              type="button"
-              onClick={handleOpen}
-              className="flex items-center gap-3 flex-1 min-w-0 text-left"
-            >
-              <div className={`w-9 h-9 rounded-lg ${iconBg} flex items-center justify-center flex-shrink-0`}>
-                <Icon size={18} className={iconColor} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-medium text-marine truncate">{file.name}</p>
-                <p className="text-[11px] text-neutral-text-tertiary">
-                  {label} · {formatBytes(file.size)}
-                </p>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={handleDownload}
-              className="flex-shrink-0 p-1.5 rounded-lg hover:bg-neutral-100 transition-colors"
-              title="Télécharger"
-            >
-              <IconDownload size={16} className="text-neutral-text-tertiary" />
-            </button>
-          </div>
-        );
-      })}
+      {files.map((file) => (
+        <FileChip
+          key={file.id}
+          name={file.name}
+          size={file.size}
+          mimeType={file.mimeType}
+          onOpen={() => {
+            const idx = artifacts.findIndex((a) => a.id === file.id);
+            if (idx >= 0) goToArtifact(idx);
+            openPanel();
+          }}
+          onDownload={() => downloadFile(file.url, file.name)}
+        />
+      ))}
     </div>
   );
 }
@@ -172,7 +125,7 @@ export default function MessageBubble({
         if (!isBlock) {
           return (
             <code
-              className="bg-[#F1F5F9] text-blue-700 font-mono text-[13px] px-[5px] py-[1px] rounded-sm"
+              className="bg-tint-code-inline text-blue-700 font-mono text-[13px] px-[5px] py-[1px] rounded-sm"
               {...props}
             >
               {children}
@@ -187,7 +140,7 @@ export default function MessageBubble({
 
       table({ children }) {
         return (
-          <div className="overflow-x-auto my-3 rounded-md border border-[#E0E4EC]">
+          <div className="overflow-x-auto my-3 rounded-md border border-neutral-border">
             <table className="w-full border-collapse text-[13px]">
               {children}
             </table>
@@ -195,13 +148,11 @@ export default function MessageBubble({
         );
       },
       thead({ children }) {
-        return (
-          <thead style={{ background: "rgba(11,31,58,0.06)" }}>{children}</thead>
-        );
+        return <thead className="bg-neutral-bg">{children}</thead>;
       },
       th({ children }) {
         return (
-          <th className="font-semibold text-left px-3 py-2 border-b border-[#E0E4EC] text-marine">
+          <th className="font-semibold text-left px-3 py-2 border-b border-neutral-border text-marine">
             {children}
           </th>
         );
@@ -212,24 +163,12 @@ export default function MessageBubble({
         );
       },
       tr({ children }) {
-        return <tr className="even:bg-[#F5F5F5] odd:bg-white">{children}</tr>;
+        return <tr className="even:bg-tint-row-alt odd:bg-white">{children}</tr>;
       },
 
       blockquote({ children }) {
         return (
-          <blockquote
-            style={{
-              borderLeft: "3px solid #1565C0",
-              background: "#F5F7FA",
-              paddingLeft: "16px",
-              paddingTop: "8px",
-              paddingBottom: "8px",
-              margin: "8px 0",
-              fontStyle: "italic",
-              color: "#4A5568",
-              borderRadius: "0 4px 4px 0",
-            }}
-          >
+          <blockquote className="border-l-[3px] border-blue-700 bg-neutral-bg pl-4 pt-2 pb-2 my-2 italic text-neutral-text-secondary rounded-r-sm">
             {children}
           </blockquote>
         );
@@ -243,8 +182,7 @@ export default function MessageBubble({
           <img
             src={src}
             alt={alt ?? ""}
-            className="max-w-full rounded-md my-2 cursor-pointer hover:opacity-90 transition-opacity duration-100"
-            style={{ maxHeight: "480px", objectFit: "contain" }}
+            className="max-w-full max-h-[480px] object-contain rounded-md my-2 cursor-pointer hover:opacity-90 transition-opacity duration-100"
             onClick={() => setLightboxSrc(src)}
           />
         );
@@ -300,12 +238,7 @@ export default function MessageBubble({
               {fileAttachments.map((f) => (
                 <div
                   key={f.id}
-                  className="flex items-center gap-1 px-2 py-1 rounded-sm text-[11px]"
-                  style={{
-                    background: "rgba(11,31,58,0.10)",
-                    color: "#0B1F3A",
-                    border: "0.5px solid #E0E4EC",
-                  }}
+                  className="flex items-center gap-1 px-2 py-1 rounded-sm text-[11px] bg-marine/10 text-marine border-[0.5px] border-neutral-border"
                 >
                   <span className="font-medium truncate max-w-[120px]">{f.name}</span>
                   <span className="text-neutral-text-tertiary">
@@ -316,10 +249,7 @@ export default function MessageBubble({
             </div>
           )}
 
-          <div
-            className="px-4 py-3 text-white text-[15px] leading-relaxed whitespace-pre-wrap"
-            style={{ background: "#0B1F3A", borderRadius: "12px" }}
-          >
+          <div className="px-4 py-3 bg-marine rounded-lg text-white text-[15px] leading-relaxed whitespace-pre-wrap">
             {message.content}
           </div>
         </div>
@@ -369,10 +299,7 @@ export default function MessageBubble({
 
             {/* Skeleton pendant la génération d'image */}
             {isStreaming && agentSteps.some((s) => s.tool === "generate_image" && s.status === "running") && (
-              <div
-                className="image-gen-skeleton mt-3 w-64 h-64 rounded-xl overflow-hidden border flex items-end justify-center pb-3"
-                style={{ borderColor: "#E0E4EC" }}
-              >
+              <div className="image-gen-skeleton mt-3 w-64 h-64 rounded-xl overflow-hidden border border-neutral-border flex items-end justify-center pb-3">
                 <span className="text-[11px] text-neutral-text-tertiary">Génération en cours…</span>
               </div>
             )}
@@ -386,15 +313,13 @@ export default function MessageBubble({
                     <img
                       src={img.url}
                       alt={img.name}
-                      className="max-w-full block rounded-xl cursor-pointer hover:opacity-95 transition-opacity duration-100"
-                      style={{ maxHeight: "480px", objectFit: "contain" }}
+                      className="max-w-full max-h-[480px] object-contain block rounded-xl cursor-pointer hover:opacity-95 transition-opacity duration-100"
                       onClick={() => setLightboxSrc(img.url)}
                     />
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); downloadFile(img.url, img.name); }}
-                      className="absolute bottom-3 right-3 p-2 rounded-full text-white transition-colors"
-                      style={{ background: "rgba(0,0,0,0.5)" }}
+                      className="absolute bottom-3 right-3 p-2 rounded-full bg-black/50 text-white transition-colors"
                       title="Télécharger"
                     >
                       <IconDownload size={16} />

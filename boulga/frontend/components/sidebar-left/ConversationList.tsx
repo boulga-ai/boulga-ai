@@ -268,11 +268,11 @@ export default function ConversationList({ onMobileClose }: Props) {
                 return (
                   <div key={conv.id} className="relative group">
                     {isConfirmingDelete ? (
-                      <div className="flex items-center gap-1 px-2 py-2 rounded-md bg-red-50">
+                      <div className="flex items-center gap-1 px-2 py-2 rounded-md bg-tint-error">
                         <span className="flex-1 text-ui font-body text-error truncate">Supprimer ?</span>
                         <button
                           onClick={() => handleDelete(conv.id)}
-                          className="p-1 rounded text-error hover:bg-red-100 transition-colors duration-100"
+                          className="p-1 rounded text-error hover:bg-error/10 transition-colors duration-100"
                           aria-label="Confirmer"
                         >
                           <IconCheck size={14} />
@@ -328,7 +328,7 @@ export default function ConversationList({ onMobileClose }: Props) {
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(conv.id); }}
-                          className="p-1 rounded text-neutral-text-tertiary hover:text-error hover:bg-red-50 transition-colors duration-100"
+                          className="p-1 rounded text-neutral-text-tertiary hover:text-error hover:bg-tint-error transition-colors duration-100"
                           aria-label="Supprimer"
                         >
                           <IconTrash size={12} />

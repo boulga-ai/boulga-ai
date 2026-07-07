@@ -4,7 +4,9 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { IconCheck } from "@tabler/icons-react";
 import { API_URL } from "@/lib/constants";
+import { Input, Button } from "@/components/ui";
 
 function ResetPasswordContent() {
   const params = useSearchParams();
@@ -57,7 +59,11 @@ function ResetPasswordContent() {
     return (
       <div className="min-h-screen bg-neutral-bg flex items-center justify-center px-4">
         <div className="w-full max-w-sm text-center">
-          <h1 className="text-display font-display text-marine mb-4">Boulga</h1>
+          <div className="flex flex-col items-center gap-3 mb-6">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icons/icon.svg" alt="" className="w-11 h-11 rounded-xl shadow-xs" />
+            <h1 className="text-h1 font-display text-marine">Boulga</h1>
+          </div>
           <div className="bg-neutral-white border border-neutral-border rounded-xl shadow-sm p-8">
             <p className="text-body font-body text-error mb-4">
               Lien de réinitialisation invalide ou manquant.
@@ -77,9 +83,11 @@ function ResetPasswordContent() {
   return (
     <div className="min-h-screen bg-neutral-bg flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <h1 className="text-display font-display text-marine">Boulga</h1>
-          <p className="text-body font-body text-neutral-text-secondary mt-1">
+        <div className="flex flex-col items-center gap-3 mb-8">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icons/icon.svg" alt="" className="w-11 h-11 rounded-xl shadow-xs" />
+          <h1 className="text-h1 font-display text-marine">Boulga</h1>
+          <p className="text-body font-body text-neutral-text-secondary -mt-1">
             Nouveau mot de passe
           </p>
         </div>
@@ -87,10 +95,8 @@ function ResetPasswordContent() {
         <div className="bg-neutral-white border border-neutral-border rounded-xl shadow-sm p-8">
           {success ? (
             <div className="text-center space-y-4">
-              <div className="w-12 h-12 mx-auto bg-green-50 rounded-full flex items-center justify-center">
-                <svg className="w-6 h-6 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
+              <div className="w-12 h-12 mx-auto bg-tint-success rounded-full flex items-center justify-center">
+                <IconCheck size={24} className="text-success" />
               </div>
               <p className="text-body font-body text-marine">
                 Mot de passe réinitialisé avec succès.
@@ -101,47 +107,33 @@ function ResetPasswordContent() {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-ui font-body font-medium text-marine mb-1">
-                  Nouveau mot de passe
-                </label>
-                <input
-                  type="password"
-                  required
-                  minLength={8}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="8 caractères minimum"
-                  className="w-full h-10 px-3 border border-neutral-border rounded-md text-body font-body text-marine bg-neutral-white focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-transparent transition-shadow duration-100"
-                />
-              </div>
+              <Input
+                type="password"
+                label="Nouveau mot de passe"
+                required
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="8 caractères minimum"
+              />
 
-              <div>
-                <label className="block text-ui font-body font-medium text-marine mb-1">
-                  Confirmer le mot de passe
-                </label>
-                <input
-                  type="password"
-                  required
-                  minLength={8}
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                  placeholder="Retapez le mot de passe"
-                  className="w-full h-10 px-3 border border-neutral-border rounded-md text-body font-body text-marine bg-neutral-white focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-transparent transition-shadow duration-100"
-                />
-              </div>
+              <Input
+                type="password"
+                label="Confirmer le mot de passe"
+                required
+                minLength={8}
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                placeholder="Retapez le mot de passe"
+              />
 
               {error && (
                 <p className="text-caption font-body text-error">{error}</p>
               )}
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2.5 bg-blue-700 text-neutral-white text-ui font-body font-medium rounded-lg hover:bg-blue-900 transition-colors duration-100 disabled:opacity-60 disabled:cursor-not-allowed mt-2"
-              >
+              <Button type="submit" variant="primary" size="lg" className="w-full mt-2" disabled={loading}>
                 {loading ? "Réinitialisation…" : "Réinitialiser le mot de passe"}
-              </button>
+              </Button>
             </form>
           )}
 

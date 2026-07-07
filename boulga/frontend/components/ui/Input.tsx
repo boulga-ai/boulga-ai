@@ -6,16 +6,9 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   helperText?: string;
 }
 
-export default function Input(
-  {
-    label,
-    error,
-    helperText,
-    id,
-    className = "",
-    ...props
-  }: InputProps,
-  ref: React.ForwardedRef<HTMLInputElement>
+const Input = React.forwardRef<HTMLInputElement, InputProps>(function Input(
+  { label, error, helperText, id, className = "", ...props },
+  ref,
 ) {
   const inputId = id || `input-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -40,7 +33,7 @@ export default function Input(
           border border-neutral-border rounded-md
           placeholder:text-neutral-text-tertiary
           transition-colors duration-200
-          focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-0 focus:border-transparent
+          focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-0 focus:border-transparent focus:shadow-xs
           disabled:bg-neutral-bg disabled:text-neutral-text-tertiary disabled:cursor-not-allowed
           ${error ? "border-error focus:ring-error" : ""}
           ${className}
@@ -60,8 +53,6 @@ export default function Input(
       )}
     </div>
   );
-}
+});
 
-const InputForwarded = React.forwardRef(Input);
-InputForwarded.displayName = "Input";
-export { InputForwarded };
+export default Input;

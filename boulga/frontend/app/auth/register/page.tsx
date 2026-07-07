@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { IconCheck, IconGift } from "@tabler/icons-react";
 import { API_URL } from "@/lib/constants";
 import { useAuthStore } from "@/store/authStore";
+import { Input, Button } from "@/components/ui";
 
 function RegisterContent() {
   const params       = useSearchParams();
@@ -59,9 +60,11 @@ function RegisterContent() {
   return (
     <div className="min-h-screen bg-neutral-bg flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <h1 className="text-display font-display text-marine">Boulga</h1>
-          <p className="text-body font-body text-neutral-text-secondary mt-1">
+        <div className="flex flex-col items-center gap-3 mb-8">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icons/icon.svg" alt="" className="w-11 h-11 rounded-xl shadow-xs" />
+          <h1 className="text-h1 font-display text-marine">Boulga</h1>
+          <p className="text-body font-body text-neutral-text-secondary -mt-1">
             Créez votre compte gratuitement
           </p>
         </div>
@@ -83,73 +86,49 @@ function RegisterContent() {
 
         <div className="bg-neutral-white border border-neutral-border rounded-xl shadow-sm p-8">
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-ui font-body font-medium text-marine mb-1">
-                Nom complet
-              </label>
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Aymar Ouédraogo"
-                className="w-full h-10 px-3 border border-neutral-border rounded-md text-body font-body text-marine bg-neutral-white focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-transparent transition-shadow duration-100"
-              />
-            </div>
+            <Input
+              type="text"
+              label="Nom complet"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Aymar Ouédraogo"
+            />
 
-            <div>
-              <label className="block text-ui font-body font-medium text-marine mb-1">
-                Email
-              </label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="vous@exemple.com"
-                className="w-full h-10 px-3 border border-neutral-border rounded-md text-body font-body text-marine bg-neutral-white focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-transparent transition-shadow duration-100"
-              />
-            </div>
+            <Input
+              type="email"
+              label="Email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="vous@exemple.com"
+            />
 
-            <div>
-              <label className="block text-ui font-body font-medium text-marine mb-1">
-                Date de naissance
-              </label>
-              <input
-                type="date"
-                required
-                value={birthdate}
-                onChange={(e) => setBirthdate(e.target.value)}
-                className="w-full h-10 px-3 border border-neutral-border rounded-md text-body font-body text-marine bg-neutral-white focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-transparent transition-shadow duration-100"
-              />
-            </div>
+            <Input
+              type="date"
+              label="Date de naissance"
+              required
+              value={birthdate}
+              onChange={(e) => setBirthdate(e.target.value)}
+            />
 
-            <div>
-              <label className="block text-ui font-body font-medium text-marine mb-1">
-                Mot de passe
-              </label>
-              <input
-                type="password"
-                required
-                minLength={8}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="8 caractères minimum"
-                className="w-full h-10 px-3 border border-neutral-border rounded-md text-body font-body text-marine bg-neutral-white focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-transparent transition-shadow duration-100"
-              />
-            </div>
+            <Input
+              type="password"
+              label="Mot de passe"
+              required
+              minLength={8}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="8 caractères minimum"
+            />
 
             {error && (
               <p className="text-caption font-body text-error">{error}</p>
             )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2.5 bg-blue-700 text-neutral-white text-ui font-body font-medium rounded-lg hover:bg-blue-900 transition-colors duration-100 disabled:opacity-60 disabled:cursor-not-allowed mt-2"
-            >
+            <Button type="submit" variant="primary" size="lg" className="w-full mt-2" disabled={loading}>
               {loading ? "Création du compte…" : "Créer mon compte"}
-            </button>
+            </Button>
           </form>
 
           <p className="mt-6 text-center text-caption font-body text-neutral-text-secondary">

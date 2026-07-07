@@ -118,7 +118,7 @@ export default function BubbleActions({ message }: Props) {
           onClick={handleThumbDown}
           disabled={!!rating}
           className={`${btnBase} ${
-            rating === "down" ? "text-error bg-red-50" : btnInactive
+            rating === "down" ? "text-error bg-tint-error" : btnInactive
           } disabled:cursor-default`}
           title="Mauvaise réponse"
           aria-label="Mauvaise réponse"

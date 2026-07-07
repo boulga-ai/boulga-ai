@@ -39,7 +39,7 @@ export default function QuotaModal() {
           <IconX size={18} />
         </button>
 
-        <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+        <div className="w-14 h-14 rounded-full bg-tint-error flex items-center justify-center mx-auto mb-4">
           <IconRocket size={28} className="text-error" />
         </div>
 

@@ -23,10 +23,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 // ── Styles par type ───────────────────────────────────────────────────────────
 
 const typeStyles: Record<ToastType, { bg: string; border: string }> = {
-  success: { bg: "bg-[#e8f5e9]", border: "border-success" },
-  error:   { bg: "bg-[#ffebee]", border: "border-error" },
-  info:    { bg: "bg-blue-50",   border: "border-blue-700" },
-  warning: { bg: "bg-[#fff3e0]", border: "border-warning" },
+  success: { bg: "bg-tint-success", border: "border-success" },
+  error:   { bg: "bg-tint-error",   border: "border-error" },
+  info:    { bg: "bg-blue-50",      border: "border-blue-700" },
+  warning: { bg: "bg-tint-warning", border: "border-warning" },
 };
 
 // ── Conteneur de toasts (à placer une fois dans le layout) ───────────────────

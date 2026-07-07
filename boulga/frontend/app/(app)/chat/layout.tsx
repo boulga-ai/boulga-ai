@@ -80,7 +80,9 @@ export default function ChatLayout({
           >
             <IconMenu2 size={20} />
           </button>
-          <span className="ml-3 text-uism font-body font-medium text-marine">Boulga</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icons/icon.svg" alt="" className="w-5 h-5 rounded-md ml-3" />
+          <span className="ml-2 text-uism font-body font-medium text-marine">Boulga</span>
         </div>
 
         {/* Bouton "rouvrir sidebar" — desktop, visible seulement quand sidebar masquée */}

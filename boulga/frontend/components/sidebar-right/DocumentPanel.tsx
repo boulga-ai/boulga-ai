@@ -6,20 +6,14 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import {
   IconX, IconCopy, IconCheck, IconDownload, IconChevronDown,
-  IconHistory, IconFile, IconArrowLeft, IconChevronLeft,
-  IconChevronRight, IconFileText, IconFileSpreadsheet,
-  IconPresentationAnalytics, IconFileTypePdf,
+  IconHistory, IconArrowLeft, IconChevronLeft,
+  IconChevronRight,
 } from "@tabler/icons-react";
 import { useDocStore, type Artifact } from "@/store/docStore";
 import CodeBlock from "@/components/chat/CodeBlock";
+import { FileChip, getFileMeta, formatBytes } from "@/components/ui";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} o`;
-  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} Ko`;
-  return `${(bytes / 1048576).toFixed(1)} Mo`;
-}
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -31,15 +25,6 @@ function downloadBlob(blob: Blob, filename: string) {
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 100);
 }
-
-const MIME_META: Record<string, { label: string; color: string; bg: string; Icon: React.ComponentType<{ size?: number | string; className?: string }> }> = {
-  "application/pdf":                                                                          { label: "PDF",   color: "text-red-700",    bg: "bg-red-50",    Icon: IconFileTypePdf },
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":                 { label: "Word",  color: "text-blue-700",   bg: "bg-blue-50",   Icon: IconFileText },
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":                       { label: "Excel", color: "text-green-700",  bg: "bg-green-50",  Icon: IconFileSpreadsheet },
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation":               { label: "PPT",   color: "text-orange-700", bg: "bg-orange-50", Icon: IconPresentationAnalytics },
-  "text/csv":                                                                                 { label: "CSV",   color: "text-green-700",  bg: "bg-green-50",  Icon: IconFileSpreadsheet },
-  "text/plain":                                                                               { label: "TXT",   color: "text-neutral-600",bg: "bg-neutral-50",Icon: IconFileText },
-};
 
 // ── ArtifactViewer ────────────────────────────────────────────────────────────
 
@@ -83,7 +68,7 @@ function ArtifactViewer({ artifact }: { artifact: Artifact }) {
   }
 
   // DOCX / XLSX / PPTX — pas de preview
-  const meta = MIME_META[artifact.mimeType] ?? { label: "Fichier", color: "text-neutral-600", bg: "bg-neutral-50", Icon: IconFile };
+  const meta = getFileMeta(artifact.mimeType);
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-5 p-8 text-center">
       <div className={`w-20 h-20 rounded-2xl ${meta.bg} flex items-center justify-center`}>
@@ -119,11 +104,11 @@ function DocumentBody({ content, format }: { content: string; format: string }) 
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           code({ className, children, ...props }: any) {
             const match = /language-(\w+)/.exec(className || "");
-            if (!match) return <code className="bg-[#F1F5F9] text-blue-700 font-mono text-[13px] px-[5px] py-[1px] rounded-sm" {...props}>{children}</code>;
+            if (!match) return <code className="bg-tint-code-inline text-blue-700 font-mono text-[13px] px-[5px] py-[1px] rounded-sm" {...props}>{children}</code>;
             return <CodeBlock language={match[1]} code={String(children).replace(/\n$/, "")} />;
           },
           table({ children }) {
-            return <div className="overflow-x-auto my-3 rounded-md border border-[#E0E4EC]"><table className="w-full border-collapse text-[13px]">{children}</table></div>;
+            return <div className="overflow-x-auto my-3 rounded-md border border-neutral-border"><table className="w-full border-collapse text-[13px]">{children}</table></div>;
           },
           a({ href, children, ...props }) {
             return <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline" {...props}>{children}</a>;
@@ -228,15 +213,8 @@ export default function DocumentPanel() {
             <div className="flex-1 min-w-0 flex items-center gap-2">
               {currentArtifact ? (
                 <>
-                  {(() => {
-                    const meta = MIME_META[currentArtifact.mimeType] ?? { label: "Fichier", color: "text-neutral-600", bg: "bg-neutral-100", Icon: IconFile };
-                    return (
-                      <>
-                        <span className={`text-[11px] font-body font-medium px-1.5 py-0.5 rounded ${meta.bg} ${meta.color}`}>{meta.label}</span>
-                        <span className="text-uism font-body font-medium text-marine truncate">{currentArtifact.name}</span>
-                      </>
-                    );
-                  })()}
+                  <FileChip variant="badge" name={currentArtifact.name} size={currentArtifact.size} mimeType={currentArtifact.mimeType} />
+                  <span className="text-uism font-body font-medium text-marine truncate">{currentArtifact.name}</span>
                 </>
               ) : (
                 <span className="text-uism font-body font-medium text-marine">Document</span>

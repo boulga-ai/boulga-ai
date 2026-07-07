@@ -423,10 +423,10 @@ export default function ChatInput() {
               {isStreaming ? (
                 <button
                   onClick={stopStreaming}
-                  className="w-8 h-8 rounded-full bg-error flex items-center justify-center hover:bg-red-800 transition-colors duration-200"
+                  className="w-8 h-8 rounded-full bg-error flex items-center justify-center hover:bg-error-dark transition-colors duration-200"
                   aria-label="Arrêter la génération"
                 >
-                  <IconPlayerStop size={14} className="text-white" />
+                  <IconPlayerStop size={16} className="text-white" />
                 </button>
               ) : (
                 <button
@@ -435,7 +435,7 @@ export default function ChatInput() {
                   className="w-8 h-8 rounded-full bg-blue-700 flex items-center justify-center hover:bg-blue-900 transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
                   aria-label="Envoyer"
                 >
-                  <IconArrowUp size={14} className="text-white" />
+                  <IconArrowUp size={16} className="text-white" />
                 </button>
               )}
             </div>

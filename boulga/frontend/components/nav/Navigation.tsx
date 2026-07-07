@@ -76,7 +76,8 @@ export default function Navigation() {
           href="/"
           className="flex items-center justify-center h-16 flex-shrink-0 hover:bg-neutral-bg transition-colors duration-200"
         >
-          <div className="text-sm font-bold text-blue-700">B</div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icons/icon.svg" alt="Boulga" className="w-8 h-8 rounded-lg" />
         </Link>
 
         <hr className="border-neutral-border" />
@@ -152,6 +153,17 @@ export default function Navigation() {
               <IconShield size={24} />
             </Link>
           )}
+
+          {/* Compte — bulle d'initiale */}
+          <Link
+            href="/settings"
+            className="flex items-center justify-center w-14 h-14 rounded-md transition-colors duration-200 hover:bg-neutral-bg"
+            title={user?.name ?? "Compte"}
+          >
+            <div className="w-9 h-9 rounded-full bg-blue-700 text-neutral-white text-[13px] font-medium flex items-center justify-center flex-shrink-0">
+              {(user?.name ?? user?.email ?? "?").trim().charAt(0).toUpperCase()}
+            </div>
+          </Link>
         </div>
       </nav>
 
@@ -161,6 +173,7 @@ export default function Navigation() {
           {MOBILE_TABS.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
+            const isSettingsTab = item.href === "/settings";
             return (
               <Link
                 key={item.href}
@@ -171,7 +184,13 @@ export default function Navigation() {
                     : "text-neutral-text-tertiary"
                 }`}
               >
-                <Icon size={22} />
+                {isSettingsTab ? (
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-medium ${active ? "bg-blue-700 text-neutral-white" : "bg-neutral-border text-neutral-text-secondary"}`}>
+                    {(user?.name ?? user?.email ?? "?").trim().charAt(0).toUpperCase()}
+                  </div>
+                ) : (
+                  <Icon size={22} />
+                )}
                 <span className="text-[10px] font-body mt-0.5">{item.label}</span>
               </Link>
             );
