@@ -31,6 +31,7 @@ _IMAGE_MODELS: dict[str, str] = {
 MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     "gemini-2.5-flash":  1_000_000,
     "gemini-2.5-pro":    2_000_000,
+    "gemini-3.5-flash":  1_000_000,
     "claude-haiku-4-5":  200_000,
     "claude-sonnet-4-6": 1_000_000,
     "claude-opus-4-6":   1_000_000,

@@ -25,6 +25,7 @@ const PROVIDER_COLORS: Record<string, string> = {
 const MODEL_DESCRIPTIONS: Record<string, string> = {
   "gemini-2.5-flash": "Rapide, multimodal, tâches courantes",
   "gemini-2.5-pro": "Raisonnement avancé, contexte long",
+  "gemini-3.5-flash": "Quasi-Pro pour le code et l'agentique — plan Océan",
   "claude-haiku-4-5": "Réponses concises et rapides",
   "claude-sonnet-4-6": "Analyse, code, rédaction avancée",
   "claude-opus-4-6": "Le plus puissant — agents, raisonnement complexe",
@@ -41,7 +42,7 @@ const TIER_MODELS: Record<string, string[]> = {
   goutte: ["gemini-2.5-flash", "deepseek-v4-flash"],
   source: _STANDARD,
   fleuve: _STANDARD,
-  ocean:  [..._STANDARD, "claude-opus-4-6"],
+  ocean:  [..._STANDARD, "claude-opus-4-6", "gemini-3.5-flash"],
 };
 
 // ── Hook ───────────────────────────────────────────────────────────────────────

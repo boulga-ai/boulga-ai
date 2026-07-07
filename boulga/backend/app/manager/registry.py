@@ -53,6 +53,12 @@ LLM_REGISTRY: dict[LLMProvider, LLMInfo] = {
                 tier=ModelTier.high,
                 description="Modèle avancé pour les analyses complexes et les très longs contextes.",
             ),
+            ModelInfo(
+                id="gemini-3.5-flash",
+                label="Gemini 3.5 Flash",
+                tier=ModelTier.high,
+                description="Quasi-niveau Pro pour le code et le raisonnement agentique. Plan Océan uniquement.",
+            ),
         ],
     ),
     LLMProvider.claude: LLMInfo(
@@ -133,7 +139,7 @@ LLM_REGISTRY: dict[LLMProvider, LLMInfo] = {
 }
 
 # Modèles réservés au plan Océan (trop coûteux pour les plans inférieurs)
-_OCEAN_ONLY: set[str] = {"claude-opus-4-6"}
+_OCEAN_ONLY: set[str] = {"claude-opus-4-6", "gemini-3.5-flash"}
 
 # Accès modèles par tier d'abonnement
 # free    : gemini-2.5-flash uniquement

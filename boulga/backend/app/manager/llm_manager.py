@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 _OPENROUTER_MODELS: dict[str, str] = {
     "gemini-2.5-flash":  "google/gemini-2.5-flash",
     "gemini-2.5-pro":    "google/gemini-2.5-pro",
+    "gemini-3.5-flash":  "google/gemini-3.5-flash",
     "claude-haiku-4-5":  "anthropic/claude-haiku-4.5",
     "claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
     "claude-opus-4-6":   "anthropic/claude-opus-4.6",
@@ -36,6 +37,7 @@ _OR_TEMPERATURE: dict[str, float] = {
 _MAX_OUTPUT_TOKENS: dict[str, int] = {
     "gemini-2.5-flash":  16384,
     "gemini-2.5-pro":    16384,
+    "gemini-3.5-flash":  16384,
     "claude-haiku-4-5":  8192,
     "claude-sonnet-4-6": 32768,
     "claude-opus-4-6":   32768,

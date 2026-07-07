@@ -54,6 +54,7 @@ function providerLabel(provider?: string, modelId?: string): string {
   const modelLabels: Record<string, string> = {
     "gemini-2.5-flash": "2.5 Flash",
     "gemini-2.5-pro": "2.5 Pro",
+    "gemini-3.5-flash": "3.5 Flash",
     "claude-haiku-4-5": "Haiku 4.5",
     "claude-sonnet-4-6": "Sonnet 4.6",
     "claude-opus-4-6": "Opus 4.6",
