@@ -368,8 +368,11 @@ export default function MessageBubble({
 
             {/* Skeleton pendant la génération d'image */}
             {isStreaming && agentSteps.some((s) => s.tool === "generate_image" && s.status === "running") && (
-              <div className="mt-3 w-64 h-64 rounded-xl overflow-hidden bg-neutral-100 animate-pulse flex items-end justify-center pb-3">
-                <span className="text-[11px] text-neutral-300">Génération en cours…</span>
+              <div
+                className="mt-3 w-64 h-64 rounded-xl overflow-hidden bg-[#EAEDF2] border animate-pulse flex items-end justify-center pb-3"
+                style={{ borderColor: "#E0E4EC" }}
+              >
+                <span className="text-[11px] text-neutral-text-tertiary">Génération en cours…</span>
               </div>
             )}
 
@@ -377,26 +380,24 @@ export default function MessageBubble({
             {message.inlineImages && message.inlineImages.length > 0 && (
               <div className="mt-3 space-y-3">
                 {message.inlineImages.map((img) => (
-                  <div key={img.id}>
+                  <div key={img.id} className="relative inline-block">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={img.url}
                       alt={img.name}
-                      className="max-w-full rounded-xl cursor-pointer hover:opacity-95 transition-opacity duration-100"
+                      className="max-w-full block rounded-xl cursor-pointer hover:opacity-95 transition-opacity duration-100"
                       style={{ maxHeight: "480px", objectFit: "contain" }}
                       onClick={() => setLightboxSrc(img.url)}
                     />
-                    <div className="mt-1.5 flex items-center justify-between">
-                      <span className="text-[11px] text-neutral-text-tertiary truncate max-w-[70%]">{img.name}</span>
-                      <button
-                        type="button"
-                        onClick={() => downloadFile(img.url, img.name)}
-                        className="flex items-center gap-1 text-[11px] text-neutral-text-tertiary hover:text-marine transition-colors"
-                      >
-                        <IconDownload size={12} />
-                        Télécharger
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); downloadFile(img.url, img.name); }}
+                      className="absolute bottom-3 right-3 p-2 rounded-full text-white transition-colors"
+                      style={{ background: "rgba(0,0,0,0.5)" }}
+                      title="Télécharger"
+                    >
+                      <IconDownload size={16} />
+                    </button>
                   </div>
                 ))}
               </div>
