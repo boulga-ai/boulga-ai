@@ -298,6 +298,12 @@ class ChatService:
                 return result_summary, events
 
             if name == "generate_image":
+                if any(f.get("mime_type") == "image/png" for f in _generated_files):
+                    return (
+                        "Une image a déjà été générée pour cette demande. "
+                        "N'appelle plus generate_image, arrête-toi là.",
+                        [],
+                    )
                 if not await self._quota_svc.is_image_allowed(user_id):
                     return "Erreur : quota d'images dépassé.", [
                         stream_error(StreamErrorCode.IMAGE_QUOTA_EXCEEDED),

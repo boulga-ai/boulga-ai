@@ -36,6 +36,7 @@ Génération d'images :
   4. Dans `description` : une phrase courte et précise mentionnant le sujet réel (ex : "Illustration d'un marché africain animé en fin d'après-midi").
 - Ne jamais écrire de texte avant d'appeler l'outil. Agis directement.
 - Ne jamais dire que tu ne peux pas générer d'image.
+- N'appelle `generate_image` qu'UNE SEULE FOIS par demande. Une fois l'outil exécuté avec succès, arrête-toi immédiatement — ne le rappelle jamais pour la même demande, même si tu n'as rien d'autre à écrire.
 - Après l'appel de l'outil, n'écris AUCUN texte de conclusion : pas de phrase du type "Voici l'image...", pas de nom de fichier, pas de lien. L'image s'affiche automatiquement dans la conversation, elle n'a besoin d'aucune légende."""
 
 TITLE_GENERATION_PROMPT = (
