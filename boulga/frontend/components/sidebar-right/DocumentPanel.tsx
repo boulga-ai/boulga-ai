@@ -8,8 +8,7 @@ import {
   IconX, IconCopy, IconCheck, IconDownload, IconChevronDown,
   IconHistory, IconFile, IconArrowLeft, IconChevronLeft,
   IconChevronRight, IconFileText, IconFileSpreadsheet,
-  IconPresentationAnalytics, IconPhoto, IconFileTypePdf,
-  IconZoomIn, IconZoomOut, IconMaximize,
+  IconPresentationAnalytics, IconFileTypePdf,
 } from "@tabler/icons-react";
 import { useDocStore, type Artifact } from "@/store/docStore";
 import CodeBlock from "@/components/chat/CodeBlock";
@@ -40,19 +39,14 @@ const MIME_META: Record<string, { label: string; color: string; bg: string; Icon
   "application/vnd.openxmlformats-officedocument.presentationml.presentation":               { label: "PPT",   color: "text-orange-700", bg: "bg-orange-50", Icon: IconPresentationAnalytics },
   "text/csv":                                                                                 { label: "CSV",   color: "text-green-700",  bg: "bg-green-50",  Icon: IconFileSpreadsheet },
   "text/plain":                                                                               { label: "TXT",   color: "text-neutral-600",bg: "bg-neutral-50",Icon: IconFileText },
-  "image/png":                                                                                { label: "Image", color: "text-purple-700", bg: "bg-purple-50", Icon: IconPhoto },
-  "image/jpeg":                                                                               { label: "Image", color: "text-purple-700", bg: "bg-purple-50", Icon: IconPhoto },
-  "image/webp":                                                                               { label: "Image", color: "text-purple-700", bg: "bg-purple-50", Icon: IconPhoto },
 };
 
 // ── ArtifactViewer ────────────────────────────────────────────────────────────
 
 function ArtifactViewer({ artifact }: { artifact: Artifact }) {
-  const [zoom, setZoom] = useState(1);
   const [txtContent, setTxtContent] = useState<string | null>(null);
-  const isImage = artifact.mimeType.startsWith("image/");
-  const isPdf   = artifact.mimeType === "application/pdf";
-  const isTxt   = artifact.mimeType === "text/plain" || artifact.mimeType === "text/csv";
+  const isPdf = artifact.mimeType === "application/pdf";
+  const isTxt = artifact.mimeType === "text/plain" || artifact.mimeType === "text/csv";
 
   useEffect(() => {
     if (!isTxt) return;
@@ -61,54 +55,6 @@ function ArtifactViewer({ artifact }: { artifact: Artifact }) {
       .then(setTxtContent)
       .catch(() => setTxtContent("Impossible de charger le contenu."));
   }, [artifact.url, isTxt]);
-
-  // Image avec zoom
-  if (isImage) {
-    return (
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Contrôles zoom */}
-        <div className="flex items-center justify-center gap-2 py-2 border-b border-neutral-border bg-neutral-50 flex-shrink-0">
-          <button
-            onClick={() => setZoom((z) => Math.max(0.25, z - 0.25))}
-            className="p-1.5 rounded hover:bg-neutral-200 text-neutral-500"
-            title="Zoom arrière"
-          >
-            <IconZoomOut size={16} />
-          </button>
-          <span className="text-[12px] font-body text-neutral-500 w-12 text-center">
-            {Math.round(zoom * 100)}%
-          </span>
-          <button
-            onClick={() => setZoom((z) => Math.min(4, z + 0.25))}
-            className="p-1.5 rounded hover:bg-neutral-200 text-neutral-500"
-            title="Zoom avant"
-          >
-            <IconZoomIn size={16} />
-          </button>
-          <button
-            onClick={() => setZoom(1)}
-            className="p-1.5 rounded hover:bg-neutral-200 text-neutral-500"
-            title="Réinitialiser"
-          >
-            <IconMaximize size={16} />
-          </button>
-        </div>
-        {/* Image */}
-        <div className="flex-1 overflow-auto flex items-start justify-center p-4 bg-[#F8F9FB]">
-          <img
-            src={artifact.url}
-            alt={artifact.name}
-            style={{ transform: `scale(${zoom})`, transformOrigin: "top center", transition: "transform 0.15s ease" }}
-            className="max-w-full rounded-lg shadow-sm"
-            onWheel={(e) => {
-              e.preventDefault();
-              setZoom((z) => Math.min(4, Math.max(0.25, z + (e.deltaY < 0 ? 0.1 : -0.1))));
-            }}
-          />
-        </div>
-      </div>
-    );
-  }
 
   // PDF dans un iframe
   if (isPdf) {

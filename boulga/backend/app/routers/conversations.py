@@ -9,6 +9,7 @@ from app.db.repositories.file_repository import FileRepository
 from app.db.repositories.message_repository import MessageRepository
 from app.db.session import get_supabase
 from app.schemas.chat import ConversationDetailOut, ConversationOut
+from app.utils.file_tags import strip_file_tags
 
 router = APIRouter()
 
@@ -39,6 +40,8 @@ async def get_conversation(
         raise NotFoundError("Conversation introuvable")
 
     messages = msg_repo.list_by_conversation(UUID(conversation_id))
+    for m in messages:
+        m["content"] = strip_file_tags(m.get("content", ""))
     generated_files = file_repo.list_by_conversation(UUID(conversation_id))
     return {**conversation, "messages": messages, "generated_files": generated_files}
 

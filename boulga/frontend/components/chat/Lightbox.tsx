@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { IconX, IconDownload, IconZoomIn, IconZoomOut, IconMaximize } from "@tabler/icons-react";
+import { IconX, IconDownload, IconZoomIn, IconZoomOut, IconMaximize, IconLink } from "@tabler/icons-react";
+import { useToast } from "@/components/ui/Toast";
 
 interface LightboxProps {
   src: string;
@@ -11,6 +12,7 @@ interface LightboxProps {
 
 export default function Lightbox({ src, alt, onClose }: LightboxProps) {
   const [zoom, setZoom] = useState(1);
+  const { addToast } = useToast();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -49,6 +51,16 @@ export default function Lightbox({ src, alt, onClose }: LightboxProps) {
     }
   };
 
+  const handleShare = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(src);
+      addToast({ type: "success", title: "Lien copié" });
+    } catch {
+      addToast({ type: "error", title: "Impossible de copier le lien" });
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex flex-col"
@@ -76,6 +88,10 @@ export default function Lightbox({ src, alt, onClose }: LightboxProps) {
           </button>
         </div>
         <div className="flex items-center gap-1">
+          <button onClick={handleShare}
+            className="p-2 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors" title="Copier le lien">
+            <IconLink size={18} />
+          </button>
           <button onClick={handleDownload}
             className="p-2 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors" title="Télécharger">
             <IconDownload size={18} />

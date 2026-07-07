@@ -2,12 +2,8 @@
 
 import asyncio
 import logging
-import re as _re_svc
 from typing import AsyncIterator, Optional
 from uuid import UUID
-
-# Supprime les balises fichiers des messages avant envoi au LLM
-_FILE_TAG_STRIP = _re_svc.compile(r"\n?<!--file:\{.*?\}-->", _re_svc.DOTALL)
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +14,7 @@ from app.db.repositories.message_repository import MessageRepository
 from app.db.session import get_supabase
 from app.manager.llm_manager import llm_manager
 from app.manager.router_agent import router_agent
+from app.utils.file_tags import strip_file_tags
 from app.prompts.chat_prompts import TITLE_GENERATION_PROMPT
 from app.prompts.tool_prompts import get_full_system_prompt
 from app.services.quota_service import QuotaService
@@ -213,7 +210,7 @@ class ChatService:
         llm_messages = [
             {
                 "role": "model" if m.get("role") == "assistant" else m.get("role", "user"),
-                "content": _FILE_TAG_STRIP.sub("", m.get("content", "")).strip(),
+                "content": strip_file_tags(m.get("content", "")),
             }
             for m in history_for_llm
         ]
