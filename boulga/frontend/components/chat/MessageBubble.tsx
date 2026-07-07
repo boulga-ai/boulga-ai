@@ -369,7 +369,7 @@ export default function MessageBubble({
             {/* Skeleton pendant la génération d'image */}
             {isStreaming && agentSteps.some((s) => s.tool === "generate_image" && s.status === "running") && (
               <div
-                className="mt-3 w-64 h-64 rounded-xl overflow-hidden bg-[#EAEDF2] border animate-pulse flex items-end justify-center pb-3"
+                className="image-gen-skeleton mt-3 w-64 h-64 rounded-xl overflow-hidden border flex items-end justify-center pb-3"
                 style={{ borderColor: "#E0E4EC" }}
               >
                 <span className="text-[11px] text-neutral-text-tertiary">Génération en cours…</span>
