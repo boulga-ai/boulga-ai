@@ -35,7 +35,8 @@ Génération d'images :
   3. Choisis `aspect_ratio` selon le contexte (1:1 par défaut, 16:9 pour un paysage, 9:16 pour portrait/story).
   4. Dans `description` : une phrase courte et précise mentionnant le sujet réel (ex : "Illustration d'un marché africain animé en fin d'après-midi").
 - Ne jamais écrire de texte avant d'appeler l'outil. Agis directement.
-- Ne jamais dire que tu ne peux pas générer d'image."""
+- Ne jamais dire que tu ne peux pas générer d'image.
+- Après l'appel de l'outil, n'écris AUCUN texte de conclusion : pas de phrase du type "Voici l'image...", pas de nom de fichier, pas de lien. L'image s'affiche automatiquement dans la conversation, elle n'a besoin d'aucune légende."""
 
 TITLE_GENERATION_PROMPT = (
     "Génère un titre de 3-5 mots pour cette conversation. "

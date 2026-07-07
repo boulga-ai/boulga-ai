@@ -242,7 +242,7 @@ export default function MessageBubble({
           <img
             src={src}
             alt={alt ?? ""}
-            className="max-w-full rounded-md my-2 cursor-zoom-in hover:opacity-90 transition-opacity duration-100"
+            className="max-w-full rounded-md my-2 cursor-pointer hover:opacity-90 transition-opacity duration-100"
             style={{ maxHeight: "480px", objectFit: "contain" }}
             onClick={() => setLightboxSrc(src)}
           />
@@ -382,7 +382,7 @@ export default function MessageBubble({
                     <img
                       src={img.url}
                       alt={img.name}
-                      className="max-w-full rounded-xl cursor-zoom-in hover:opacity-95 transition-opacity duration-100"
+                      className="max-w-full rounded-xl cursor-pointer hover:opacity-95 transition-opacity duration-100"
                       style={{ maxHeight: "480px", objectFit: "contain" }}
                       onClick={() => setLightboxSrc(img.url)}
                     />
