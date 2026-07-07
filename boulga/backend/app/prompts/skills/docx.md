@@ -19,10 +19,27 @@ print(f"FILE:{path}")   # toujours après save(), jamais avant
 **Styles**
 - Styles natifs à utiliser : `'Heading 1'`, `'Heading 2'`, `'Heading 3'`, `'Normal'`, `'List Bullet'`, `'List Number'`.
 - Ne jamais inventer un style — si le style n'existe pas dans le document, python-docx lève une erreur silencieuse ou utilise le style par défaut.
+- Puces : ne jamais insérer `•` ou `-` en dur dans le texte du paragraphe. Utiliser `doc.add_paragraph(texte, style='List Bullet')` (ou `'List Number'`) — sinon la liste n'est pas reconnue comme liste par Word (pas de retrait, pas de renumérotation).
+
+**Taille de page**
+- `Document()` sans argument part en format **Letter** (8.5"×11"), pas A4 — piège silencieux pour un document destiné à un public francophone.
+- Pour forcer A4 :
+```python
+from docx.shared import Mm
+section = doc.sections[0]
+section.page_width = Mm(210)
+section.page_height = Mm(297)
+```
 
 **Tableaux**
 - Toujours définir `table.style = 'Table Grid'` — sans ça les bordures sont invisibles.
-- Largeurs de colonnes : `table.columns[i].width = Inches(x)` — sans ça les colonnes ont une largeur par défaut aléatoire.
+- Largeurs de colonnes — `table.columns[i].width = Inches(x)` seul est **souvent ignoré** par Word/LibreOffice. Il faut aussi désactiver l'autofit et fixer la largeur de chaque cellule de la colonne :
+```python
+table.autofit = False
+table.allow_autofit = False
+for row in table.rows:
+    row.cells[i].width = Inches(x)   # répéter pour chaque colonne i
+```
 - Fusion de cellules : `table.cell(row1, col1).merge(table.cell(row2, col2))` — écrire le texte dans la cellule supérieure gauche seulement.
 - Fond de cellule : nécessite XML — utiliser ce snippet exact :
 ```python
@@ -92,6 +109,14 @@ section.right_margin = Cm(2.54)
 ```
 
 **Saut de page** : `doc.add_page_break()` — pas de `\n\n\n`.
+
+**Aligner du texte à droite sur la même ligne qu'un texte à gauche** (en-tête de lettre, sommaire fait main avec points de suite) — utiliser une tabulation, jamais des espaces ou des points en dur :
+```python
+from docx.enum.text import WD_TAB_ALIGNMENT, WD_TAB_LEADER
+p = doc.add_paragraph()
+p.paragraph_format.tab_stops.add_tab_stop(Cm(16), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+p.add_run("Chapitre 1\tPage 3")   # \t va jusqu'au taquet, avec points de suite
+```
 
 **Espacement entre paragraphes**
 ```python
