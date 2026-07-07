@@ -54,12 +54,15 @@ Animations : 100ms rapide, 200ms ease-in-out standard, 350ms expressif
 Voix de marque : directe, chaleureuse, concrète, sans jargon, inclusive.
 
 ## LLM et modèles (juin 2026)
-Pour chaque LLM : un modèle économique (low) et un avancé (high).
+Base par défaut pour chaque LLM : un modèle économique (low) et un avancé (high).
 Tous les providers sont actifs via OpenRouter.
 - Gemini : gemini-2.5-flash (low), gemini-2.5-pro (high)
 - Claude : claude-haiku-4-5 (low), claude-sonnet-4-6 (high)
 - ChatGPT : gpt-5.5-instant (low), gpt-5.5-pro (high)
 - DeepSeek : deepseek-v4-flash (low), deepseek-v4-pro (high)
+
+Cette base low/high n'est pas une limite stricte : on peut ajouter d'autres LLM ou d'autres modèles à un provider existant quand c'est utile (ex. un modèle plus performant réservé à un tier précis via le mécanisme d'accès par plan). Exemple actuel :
+- Gemini : gemini-3.5-flash — réservé au plan Océan (coût plus élevé, tool-calling et code plus fiables que 2.5 Flash).
 
 ## Features différenciantes (avantages exclusifs Boulga)
 
